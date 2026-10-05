@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.db.base import Base
 
 # Import models so SQLAlchemy registers them with Base.metadata.
-from app.models.complaint import Complaint  # noqa: F401
+import app.models  # noqa: F401
 
 
 config = context.config
