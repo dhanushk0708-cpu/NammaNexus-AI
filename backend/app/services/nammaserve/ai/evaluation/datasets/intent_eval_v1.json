@@ -1,0 +1,206 @@
+{
+  "version": "intent_eval_v1",
+  "description": "Golden evaluation dataset for NammaServe civic intent extraction across 5 service categories and diverse Bengaluru localities.",
+  "cases": [
+    {
+      "id": "water_001",
+      "query": "I urgently need a 6000 litre water tanker near Kengeri within 5 km",
+      "expected": {
+        "service": "water-tanker",
+        "location": "Kengeri",
+        "capacity_litres": 6000.0,
+        "urgent": true
+      }
+    },
+    {
+      "id": "water_002",
+      "query": "Need 4000L drinking water tanker delivery in Indiranagar tomorrow morning",
+      "expected": {
+        "service": "water-tanker",
+        "location": "Indiranagar",
+        "capacity_litres": 4000.0,
+        "urgent": false
+      }
+    },
+    {
+      "id": "water_003",
+      "query": "Can someone send a potable water tanker to Whitefield? 10000 litres needed ASAP",
+      "expected": {
+        "service": "water-tanker",
+        "location": "Whitefield",
+        "capacity_litres": 10000.0,
+        "urgent": true
+      }
+    },
+    {
+      "id": "water_004",
+      "query": "Water tanker supply for apartment in HSR Layout",
+      "expected": {
+        "service": "water-tanker",
+        "location": "HSR Layout",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "solar_001",
+      "query": "My solar water heater is leaking on the roof in Jayanagar, please send a technician",
+      "expected": {
+        "service": "solar-heater-repair",
+        "location": "Jayanagar",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "solar_002",
+      "query": "Emergency solar heater repair in Koramangala 4th block, no hot water since yesterday",
+      "expected": {
+        "service": "solar-heater-repair",
+        "location": "Koramangala",
+        "capacity_litres": null,
+        "urgent": true
+      }
+    },
+    {
+      "id": "solar_003",
+      "query": "Need regular maintenance for Supreme solar water heating system in Malleswaram",
+      "expected": {
+        "service": "solar-heater-repair",
+        "location": "Malleswaram",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "solar_004",
+      "query": "Solar panel heating service near Hebbal",
+      "expected": {
+        "service": "solar-heater-repair",
+        "location": "Hebbal",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "locksmith_001",
+      "query": "Locked out of my flat in Koramangala! Need 24x7 keymaker immediately",
+      "expected": {
+        "service": "locksmith-emergency",
+        "location": "Koramangala",
+        "capacity_litres": null,
+        "urgent": true
+      }
+    },
+    {
+      "id": "locksmith_002",
+      "query": "Lost bike keys near Marathahalli bridge, need emergency locksmith to make duplicate key",
+      "expected": {
+        "service": "locksmith-emergency",
+        "location": "Marathahalli",
+        "capacity_litres": null,
+        "urgent": true
+      }
+    },
+    {
+      "id": "locksmith_003",
+      "query": "Door lock replacement and new key cutting service in BTM Layout",
+      "expected": {
+        "service": "locksmith-emergency",
+        "location": "BTM Layout",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "locksmith_004",
+      "query": "Computerized car key duplication specialist in Rajajinagar",
+      "expected": {
+        "service": "locksmith-emergency",
+        "location": "Rajajinagar",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "ewaste_001",
+      "query": "I have 3 old laptops and broken monitors for e-waste pickup in Electronic City",
+      "expected": {
+        "service": "e-waste-pickup",
+        "location": "Electronic City",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "ewaste_002",
+      "query": "Urgent disposal of office server scrap and computer electronics in Bellandur",
+      "expected": {
+        "service": "e-waste-pickup",
+        "location": "Bellandur",
+        "capacity_litres": null,
+        "urgent": true
+      }
+    },
+    {
+      "id": "ewaste_003",
+      "query": "E-waste collection drive for batteries and obsolete printers in Banashankari",
+      "expected": {
+        "service": "e-waste-pickup",
+        "location": "Banashankari",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "ewaste_004",
+      "query": "Electronic waste recycling service near Kammanahalli",
+      "expected": {
+        "service": "e-waste-pickup",
+        "location": "Kammanahalli",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "debris_001",
+      "query": "Construction debris and concrete rubble removal needed after house renovation in Yelahanka",
+      "expected": {
+        "service": "debris-bulk-waste",
+        "location": "Yelahanka",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "debris_002",
+      "query": "Emergency bulk waste pickup in Sarjapur, huge pile of renovation trash blocking gate",
+      "expected": {
+        "service": "debris-bulk-waste",
+        "location": "Sarjapur",
+        "capacity_litres": null,
+        "urgent": true
+      }
+    },
+    {
+      "id": "debris_003",
+      "query": "Old furniture and renovation debris clearance service in Domlur",
+      "expected": {
+        "service": "debris-bulk-waste",
+        "location": "Domlur",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    },
+    {
+      "id": "debris_004",
+      "query": "Building rubble and tiles waste collection truck near Richmond Town",
+      "expected": {
+        "service": "debris-bulk-waste",
+        "location": "Richmond Town",
+        "capacity_litres": null,
+        "urgent": false
+      }
+    }
+  ]
+}

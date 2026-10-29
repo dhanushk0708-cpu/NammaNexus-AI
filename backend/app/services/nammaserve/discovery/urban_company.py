@@ -19,8 +19,18 @@ class UrbanCompanyDiscoveryConnector(BaseDiscoveryConnector):
 
     @property
     def is_available(self) -> bool:
-        # Public partner API is not currently configured / authorized
+        # Urban Company public partner API requires commercial enterprise agreement
         return False
+
+    def get_status(self, results_count: int = 0):
+        from app.schemas.nammaserve import ConnectorStatus
+        return ConnectorStatus(
+            connector_name=self.name,
+            source_type=self.source_type,
+            is_available=self.is_available,
+            status_message="Urban Company public partner API requires commercial enterprise agreement; connector is not configured and unapproved scraping is prohibited.",
+            results_count=results_count,
+        )
 
     async def search(self, query: DiscoveryQuery) -> list[NormalizedProviderResult]:
         return []

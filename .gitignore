@@ -1,5 +1,33 @@
+# Environment variables and secrets
+
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+
+venv/
+.venv/
 backend/.venv/
+
+# Python cache files
+
+**pycache**/
+*.py[cod]
+
+# Backend generated storage
+
 backend/storage/
-backend/.env
-__pycache__/
-*.pyc
+
+# Node.js dependencies
+
+node_modules/
+
+# Next.js build output
+
+.next/
+
+# Build artifacts
+
+dist/
+build/

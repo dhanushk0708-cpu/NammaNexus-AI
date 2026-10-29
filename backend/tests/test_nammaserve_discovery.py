@@ -369,7 +369,9 @@ def test_connector_interfaces_and_unavailable_status():
     uc_connector = UrbanCompanyDiscoveryConnector()
     nb_connector = NoBrokerDiscoveryConnector()
     web_connector = WebSearchDiscoveryConnector()
-    gp_connector = GooglePlacesDiscoveryConnector(api_key=None)
+    # Use an explicit empty key so this test remains deterministic even when
+    # the developer's local environment has a configured Places credential.
+    gp_connector = GooglePlacesDiscoveryConnector(api_key="")
 
     assert uc_connector.is_available is False
     assert nb_connector.is_available is False

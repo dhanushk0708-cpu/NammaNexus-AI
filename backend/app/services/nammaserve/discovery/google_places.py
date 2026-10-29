@@ -15,7 +15,8 @@ class GooglePlacesDiscoveryConnector(BaseDiscoveryConnector):
     """Connector for querying the Google Places API (Places New API)."""
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or settings.google_places_api_key
+        self.api_key = settings.google_places_api_key if api_key is None else api_key
+        self._last_error: str | None = None
 
     @property
     def name(self) -> str:
@@ -29,11 +30,30 @@ class GooglePlacesDiscoveryConnector(BaseDiscoveryConnector):
     def is_available(self) -> bool:
         return bool(self.api_key and self.api_key.strip())
 
+    def get_status(self, results_count: int = 0):
+        from app.schemas.nammaserve import ConnectorStatus
+
+        if not self.is_available:
+            message = "Google Places API key is not configured."
+        elif self._last_error:
+            message = f"Google Places request failed: {self._last_error}"
+        else:
+            message = "Google Places API (New) is configured."
+        return ConnectorStatus(
+            connector_name=self.name,
+            source_type=self.source_type,
+            is_available=self.is_available,
+            status_message=message,
+            results_count=results_count if self._last_error is None else 0,
+        )
+
     async def search(self, query: DiscoveryQuery) -> list[NormalizedProviderResult]:
         """Search Google Places for local service businesses."""
         if not self.is_available:
             logger.debug("Google Places connector skipped: API key not configured.")
             return []
+
+        self._last_error = None
 
         # Construct search text
         service_text = query.service or "civic service"
@@ -44,7 +64,7 @@ class GooglePlacesDiscoveryConnector(BaseDiscoveryConnector):
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.api_key,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.location,places.currentOpeningHours,places.websiteUri",
+            "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.location,places.currentOpeningHours,places.websiteUri,places.rating,places.userRatingCount,places.googleMapsUri,places.reviews",
         }
         payload = {
             "textQuery": text_query,
@@ -64,6 +84,7 @@ class GooglePlacesDiscoveryConnector(BaseDiscoveryConnector):
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 if response.status_code != 200:
+                    self._last_error = f"HTTP {response.status_code} {response.reason_phrase}"
                     logger.warning(
                         "Google Places API returned status %s: %s",
                         response.status_code,
@@ -107,11 +128,19 @@ class GooglePlacesDiscoveryConnector(BaseDiscoveryConnector):
                         distance_km=dist_km,
                         matched_service_slug=query.service,
                         matched_service_name=query.service.replace("-", " ").title() if query.service else None,
-                        source_url=website,
+                        source_url=place.get("googleMapsUri") or website,
+                        website=website,
+                        external_ids={"google_place_id": place.get("id", "")},
                     )
+                    # Google only returns a limited, attributable review sample.
+                    # Keep aggregate metrics tied to this place; review text is not
+                    # surfaced until a provider-review response contract exists.
+                    normalized.rating = place.get("rating")
+                    normalized.review_count = place.get("userRatingCount")
                     results.append(normalized)
 
                 return results
         except Exception as exc:
-            logger.error("Error executing Google Places query: %s", exc)
+            self._last_error = type(exc).__name__
+            logger.error("Error executing Google Places query: %s", self._last_error)
             return []

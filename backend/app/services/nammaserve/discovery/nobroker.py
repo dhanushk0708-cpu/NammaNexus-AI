@@ -19,8 +19,18 @@ class NoBrokerDiscoveryConnector(BaseDiscoveryConnector):
 
     @property
     def is_available(self) -> bool:
-        # Public partner API is not currently configured / authorized
+        # NoBroker partner API is not publicly accessible
         return False
+
+    def get_status(self, results_count: int = 0):
+        from app.schemas.nammaserve import ConnectorStatus
+        return ConnectorStatus(
+            connector_name=self.name,
+            source_type=self.source_type,
+            is_available=self.is_available,
+            status_message="NoBroker partner API is not publicly accessible; connector is not configured and private API bypassing is prohibited.",
+            results_count=results_count,
+        )
 
     async def search(self, query: DiscoveryQuery) -> list[NormalizedProviderResult]:
         return []

@@ -41,9 +41,13 @@ export default function Header() {
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
             SpotFix AI
           </Link>
-          <span className="px-3 py-2 text-slate-400 cursor-not-allowed flex items-center gap-1">
+          <Link
+            href="/nammaserve"
+            className="px-3 py-2 rounded-lg text-slate-700 hover:text-[#C8102E] hover:bg-red-50/60 font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-600" />
             NammaServe
-          </span>
+          </Link>
           <span className="px-3 py-2 text-slate-400 cursor-not-allowed flex items-center gap-1">
             CivicVoice
           </span>
@@ -53,8 +57,14 @@ export default function Header() {
           </span>
         </nav>
 
-        {/* Mobile SpotFix Link */}
-        <div className="md:hidden">
+        {/* Mobile Links */}
+        <div className="md:hidden flex items-center gap-2">
+          <Link
+            href="/nammaserve"
+            className="text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200"
+          >
+            NammaServe
+          </Link>
           <Link
             href="/spotfix"
             className="text-xs font-bold bg-[#C8102E] text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-xs"

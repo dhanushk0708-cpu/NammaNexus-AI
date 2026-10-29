@@ -6,9 +6,16 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     environment: str = "development"
 
+    llm_provider: str = "groq"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.0-flash"
     groq_api_key: str | None = None
+    groq_model: str = "qwen/qwen3.8-27b"
+
+    # NammaServe AI Intent Cache settings
+    intent_cache_enabled: bool = True
+    intent_cache_ttl_seconds: int = 3600
+    intent_cache_max_size: int = 1000
 
     database_url: str
 
@@ -34,6 +41,8 @@ class Settings(BaseSettings):
     cloudinary_api_secret: str | None = None
 
     google_places_api_key: str | None = None
+    geoapify_api_key: str | None = None
+    foursquare_api_key: str | None = None
     default_search_radius_km: float = 5.0
     max_search_radius_km: float = 25.0
 
