@@ -16,8 +16,16 @@ from app.models.nammaserve import (
     VerificationStatus,
 )
 
+from app.models.civicvoice import (
+    CivicVoiceAnalysisRecord,
+    CivicVoiceCitizenSubmission,
+    CivicVoiceReport,
+    CivicVoiceReportAudit,
+    CivicVoiceSourceRecord,
+)
 from app.models.nammaserve_research import (
     BookingRequest,
+    PriceComparisonRecord,
     ResearchCandidate,
     ResearchCoverage,
 )
@@ -42,4 +50,10 @@ __all__ = [
     "ResearchCandidate",
     "ResearchCoverage",
     "BookingRequest",
+    "PriceComparisonRecord",
+    "CivicVoiceSourceRecord",
+    "CivicVoiceAnalysisRecord",
+    "CivicVoiceCitizenSubmission",
+    "CivicVoiceReport",
+    "CivicVoiceReportAudit",
 ]

@@ -449,3 +449,117 @@ class BookingRequest(Base):
         "ResearchCandidate",
         back_populates="booking_requests",
     )
+
+
+class PriceComparisonRecord(Base):
+    """Centralized Bengaluru home-service price comparison records across 4 platforms.
+    
+    Contains 142 collected pricing records from Urban Company, NoBroker, Justdial,
+    and Sulekha across 8 categories, preserving all 14 original CSV fields,
+    lossless price representations, verification statuses, geographic caveats,
+    and research dates.
+    """
+    __tablename__ = "nammaserve_price_comparisons"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    record_hash: Mapped[str] = mapped_column(
+        String(64),
+        index=True,
+        unique=True,
+        nullable=False,
+    )
+    source_platform: Mapped[str] = mapped_column(
+        String(50),
+        index=True,
+        nullable=False,
+    )
+    service_category: Mapped[str] = mapped_column(
+        String(100),
+        index=True,
+        nullable=False,
+    )
+    service_name: Mapped[str] = mapped_column(
+        String(200),
+        index=True,
+        nullable=False,
+    )
+    provider_name: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+    )
+    published_price: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    currency: Mapped[str] = mapped_column(
+        String(10),
+        default="INR",
+        nullable=False,
+    )
+    price_type: Mapped[str] = mapped_column(
+        String(30),
+        index=True,
+        nullable=False,
+    )
+    price_unit: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    price_scope: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    geographic_scope: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    source_url: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+    source_checked_date: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(50),
+        index=True,
+        nullable=False,
+    )
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    price_min: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    price_max: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    is_locality_specific: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    raw_record: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+

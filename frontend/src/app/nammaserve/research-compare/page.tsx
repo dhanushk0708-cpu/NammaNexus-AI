@@ -244,6 +244,12 @@ export default function NammaServeResearchComparePage() {
 
           <div className="flex items-center gap-2">
             <Link
+              href="/nammaserve/price-comparison"
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition-colors flex items-center gap-1 shadow-2xs"
+            >
+              Bengaluru Price Comparison (142 Records)
+            </Link>
+            <Link
               href="/nammaserve"
               className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
             >

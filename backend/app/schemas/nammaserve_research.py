@@ -150,3 +150,80 @@ class BookingRequestRead(BaseModel):
         "Booking request recorded. Provider confirmation is required before service is scheduled."
     )
     created_at: datetime
+
+
+class PriceComparisonRecordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    record_hash: str
+    source_platform: str
+    service_category: str
+    service_name: str
+    provider_name: str
+    published_price: str
+    currency: str = "INR"
+    price_type: str
+    price_unit: str | None = None
+    price_scope: str | None = None
+    geographic_scope: str
+    source_url: str
+    source_checked_date: str
+    verification_status: str
+    notes: str | None = None
+    price_min: float | None = None
+    price_max: float | None = None
+    is_locality_specific: bool = False
+    raw_record: dict[str, Any] | None = None
+    created_at: datetime
+
+
+class PriceComparisonListResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    pages: int
+    items: list[PriceComparisonRecordRead]
+
+
+class PriceComparisonOverviewResponse(BaseModel):
+    total_records: int
+    platforms_count: dict[str, int]
+    categories_count: dict[str, int]
+    price_types_count: dict[str, int]
+    verification_breakdown: dict[str, int]
+    citywide_confirmed_count: int
+    locality_specific_count: int
+    latest_research_date: str = "2026-10-29"
+    disclaimer: str = (
+        "Prices are research snapshots dated 29 October 2026, not live quotes. "
+        "Final costs may vary by locality, job scope, materials, spare parts, access, and provider assessment."
+    )
+
+
+class PriceComparisonFiltersResponse(BaseModel):
+    platforms: list[str]
+    categories: list[str]
+    price_types: list[str]
+    verification_statuses: list[str]
+    geographic_scopes: list[str]
+
+
+class BenchmarkTaskComparison(BaseModel):
+    category: str
+    benchmark_task: str
+    urban_company: PriceComparisonRecordRead | None = None
+    nobroker: PriceComparisonRecordRead | None = None
+    justdial: PriceComparisonRecordRead | None = None
+    sulekha: PriceComparisonRecordRead | None = None
+    comparability_notes: str | None = None
+
+
+class PriceComparisonBenchmarksResponse(BaseModel):
+    total_benchmarks: int
+    benchmarks: list[BenchmarkTaskComparison]
+    disclaimer: str = (
+        "Prices are research snapshots dated 29 October 2026, not live quotes. "
+        "Final costs may vary by locality, job scope, materials, spare parts, access, and provider assessment."
+    )
+

@@ -239,12 +239,20 @@ export default function NammaServeMarketplacePage() {
             Research-backed local home services in Bengaluru. Providers require direct confirmation before booking.
           </span>
         </div>
-        <Link
-          href="/nammaserve/research-compare"
-          className="font-bold text-[#C8102E] hover:underline flex items-center gap-1 shrink-0"
-        >
-          Research & Comparison Dashboard <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/nammaserve/price-comparison"
+            className="font-bold text-amber-950 hover:text-[#C8102E] flex items-center gap-1 shrink-0 bg-white px-2.5 py-0.5 rounded border border-amber-300 shadow-2xs hover:border-[#C8102E]"
+          >
+            Bengaluru Price Comparison (142 Records) <ArrowRight className="w-3.5 h-3.5 text-[#C8102E]" />
+          </Link>
+          <Link
+            href="/nammaserve/research-compare"
+            className="font-bold text-[#C8102E] hover:underline flex items-center gap-1 shrink-0"
+          >
+            Provider Research Dashboard <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
 
       {/* Hero Section */}

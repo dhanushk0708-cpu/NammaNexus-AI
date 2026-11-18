@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ShieldAlert, Sparkles, MapPin, Layers } from "lucide-react";
+import { ShieldAlert, Sparkles, MapPin, Layers, MessageSquareText } from "lucide-react";
 
 export default function Header() {
   return (
@@ -48,9 +48,14 @@ export default function Header() {
             <Layers className="w-3.5 h-3.5 text-amber-600" />
             NammaServe
           </Link>
-          <span className="px-3 py-2 text-slate-400 cursor-not-allowed flex items-center gap-1">
+          <Link
+            href="/civicvoice"
+            title="Public Opinion Intelligence — search topics, explore external discussions, understand different viewpoints, and share your opinion."
+            className="px-3 py-2 rounded-lg text-slate-700 hover:text-[#C8102E] hover:bg-red-50/60 font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            <MessageSquareText className="w-3.5 h-3.5 text-amber-600" />
             CivicVoice
-          </span>
+          </Link>
           <span className="px-[#10px] text-slate-300">|</span>
           <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-full flex items-center gap-1">
             <MapPin className="w-3 h-3 text-[#C8102E]" /> BBMP & BWSSB
@@ -59,6 +64,13 @@ export default function Header() {
 
         {/* Mobile Links */}
         <div className="md:hidden flex items-center gap-2">
+          <Link
+            href="/civicvoice"
+            title="Public Opinion Intelligence — search topics, explore external discussions, understand different viewpoints, and share your opinion."
+            className="text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200"
+          >
+            CivicVoice
+          </Link>
           <Link
             href="/nammaserve"
             className="text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200"

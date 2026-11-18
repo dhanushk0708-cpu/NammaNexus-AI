@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     database_url: str
 
+    # CivicVoice AI — Public Opinion Sources
+    tavily_api_key: str | None = None
+    youtube_api_key: str | None = None
+    bluesky_api_base_url: str = "https://api.bsky.app"
+    civicvoice_api_token: str | None = None
+
     resend_api_key: str | None = None
     resend_from_email: str = "NammaNexus AI <notifications@nammanexus.ai>"
 
