@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from app.core.config import settings
-from app.schemas.ai import SpotFixImageAnalysisResult
+from app.schemas.ai import SpotFixImageAnalysisResult, ValidationStatus
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiVisionServiceError(RuntimeError):
@@ -50,43 +53,58 @@ class GeminiVisionService:
                 "AI response must be a structured object."
             )
 
+        data = dict(payload)
+
+        # Backward compatibility if mock or response has category but missing validation_status
+        if not data.get("validation_status") and data.get("category"):
+            data["validation_status"] = "ACCEPTED"
+            data.setdefault("is_civic_issue", True)
+
         required_fields = {
-            "category",
-            "confidence",
-            "severity",
+            "validation_status",
             "visual_explanation",
+            "confidence",
         }
 
-        if not required_fields.issubset(payload.keys()):
+        if not required_fields.issubset(data.keys()):
             raise GeminiResponseValidationError(
                 "AI response is missing required fields."
             )
 
-        normalized_payload = {
-            "category": payload.get("category"),
-            "confidence": payload.get("confidence"),
-            "severity": payload.get("severity"),
-            "visual_explanation": payload.get("visual_explanation"),
-        }
-
-        if any(value is None for value in normalized_payload.values()):
+        status_str = str(data.get("validation_status") or "").strip().upper()
+        if status_str not in {"ACCEPTED", "UNCLEAR", "REJECTED"}:
             raise GeminiResponseValidationError(
-                "AI response contains null required fields."
+                f"Unsupported validation status: {data.get('validation_status')}."
             )
 
-        if isinstance(normalized_payload["category"], str):
-            normalized_payload["category"] = normalized_payload["category"].strip()
+        data["validation_status"] = status_str
 
-        if isinstance(normalized_payload["severity"], str):
-            normalized_payload["severity"] = normalized_payload["severity"].strip()
-
-        if isinstance(normalized_payload["visual_explanation"], str):
-            normalized_payload["visual_explanation"] = normalized_payload[
-                "visual_explanation"
-            ].strip()
+        if status_str == "ACCEPTED":
+            data["is_civic_issue"] = True
+            if not data.get("category"):
+                raise GeminiResponseValidationError(
+                    "AI response for ACCEPTED status must include a category."
+                )
+            if not data.get("severity"):
+                raise GeminiResponseValidationError(
+                    "AI response for ACCEPTED status must include severity."
+                )
+        else:
+            data["is_civic_issue"] = False
+            data["category"] = None
+            data["severity"] = None
+            if not data.get("rejection_reason"):
+                data["rejection_reason"] = (
+                    str(data.get("visual_explanation") or "").strip()
+                    or (
+                        "Image quality is insufficient."
+                        if status_str == "UNCLEAR"
+                        else "No supported civic issue detected."
+                    )
+                )
 
         try:
-            return SpotFixImageAnalysisResult.model_validate(normalized_payload)
+            return SpotFixImageAnalysisResult.model_validate(data)
         except Exception as exc:
             raise GeminiResponseValidationError(
                 "AI response failed schema validation."
@@ -186,14 +204,24 @@ class GeminiVisionService:
         client = self._require_client()
 
         prompt = (
-            "Analyze the civic issue shown in this image. "
-            "Use only one of these categories: "
-            "POTHOLE, GARBAGE, WATER_LEAKAGE, WATERLOGGING, "
-            "STREET_LIGHT, FALLEN_TREE. "
-            "Return the category, confidence, severity, and a concise "
-            "visual explanation based only on visible evidence. "
-            "If the image does not clearly match a supported category, "
-            "do not invent evidence."
+            "You are a civic intelligence visual inspector for Bengaluru SpotFix. "
+            "Analyze the image to determine whether a supported civic issue is visibly identifiable. "
+            "Supported categories ONLY: "
+            "1. POTHOLE: Visible depression, road crater, broken asphalt hole on roadway. "
+            "2. GARBAGE: Visible dumped waste, uncollected trash heap, overflowing public dumpster. "
+            "3. WATER_LEAKAGE: Visible potable water pipe burst, municipal line leakage spraying or gushing. "
+            "4. WATERLOGGING: Visible standing flood water, submerged road/street section due to poor drainage. "
+            "5. STREET_LIGHT: Visible damaged, hanging, broken street light pole or unlit civic fixture. "
+            "6. FALLEN_TREE: Visible fallen tree, uprooted trunk, or large branch blocking civic road/pathway. "
+            "Determine validation_status: "
+            "- ACCEPTED: A supported civic issue is visibly identifiable. "
+            "- UNCLEAR: Image quality, blur, lighting, angle, or visual evidence is insufficient to verify a civic issue. "
+            "- REJECTED: No civic issue is visible (e.g. normal road, selfie, animal, random object) OR the issue shown is an unsupported category (e.g. illegal parking, graffiti, building construction, traffic violation, encroachment). "
+            "Rules: "
+            "1. If ACCEPTED: is_civic_issue must be true, category must be one of the 6 supported categories, severity must be LOW, MEDIUM, HIGH, or CRITICAL. "
+            "A genuine low-severity issue (e.g. minor pothole or small trash pile) must remain ACCEPTED with severity LOW. "
+            "2. If UNCLEAR or REJECTED: is_civic_issue must be false, category must be null, severity must be null, and rejection_reason must clearly explain why. "
+            "3. Do not invent or assume evidence not visible in the image. Ground visual_explanation strictly in visible details."
         )
 
         try:
@@ -214,8 +242,16 @@ class GeminiVisionService:
                 response_schema = types.Schema(
                     type="OBJECT",
                     properties={
+                        "validation_status": types.Schema(
+                            type="STRING",
+                            enum=["ACCEPTED", "UNCLEAR", "REJECTED"],
+                        ),
+                        "is_civic_issue": types.Schema(
+                            type="BOOLEAN",
+                        ),
                         "category": types.Schema(
                             type="STRING",
+                            nullable=True,
                             enum=[
                                 "POTHOLE",
                                 "GARBAGE",
@@ -232,6 +268,7 @@ class GeminiVisionService:
                         ),
                         "severity": types.Schema(
                             type="STRING",
+                            nullable=True,
                             enum=[
                                 "LOW",
                                 "MEDIUM",
@@ -242,11 +279,15 @@ class GeminiVisionService:
                         "visual_explanation": types.Schema(
                             type="STRING",
                         ),
+                        "rejection_reason": types.Schema(
+                            type="STRING",
+                            nullable=True,
+                        ),
                     },
                     required=[
-                        "category",
+                        "validation_status",
+                        "is_civic_issue",
                         "confidence",
-                        "severity",
                         "visual_explanation",
                     ],
                 )

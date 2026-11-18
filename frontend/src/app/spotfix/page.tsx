@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ImageIntake from "@/components/spotfix/ImageIntake";
 import LocationPickerMap from "@/components/spotfix/LocationPickerMap";
 import SubmissionSummary from "@/components/spotfix/SubmissionSummary";
@@ -14,7 +14,28 @@ export default function SpotFixPage() {
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
 
+  // Clean up object URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(imagePreviewUrl);
+        } catch (e) {
+          console.warn("Error revoking preview URL:", e);
+        }
+      }
+    };
+  }, [imagePreviewUrl]);
+
   const handleImageUploaded = (storageKey: string, previewUrl: string) => {
+    // If there was an old blob preview URL, clean it up
+    if (imagePreviewUrl && imagePreviewUrl !== previewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrl);
+      } catch (e) {
+        console.warn("Error revoking previous preview URL:", e);
+      }
+    }
     setImageStorageKey(storageKey);
     setImagePreviewUrl(previewUrl);
     setStep(2);
@@ -26,7 +47,27 @@ export default function SpotFixPage() {
     setStep(3);
   };
 
+  const handleChangePhoto = () => {
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrl);
+      } catch (e) {
+        console.warn("Error revoking preview URL:", e);
+      }
+    }
+    setImageStorageKey(null);
+    setImagePreviewUrl(null);
+    setStep(1);
+  };
+
   const handleReset = () => {
+    if (imagePreviewUrl && imagePreviewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(imagePreviewUrl);
+      } catch (e) {
+        console.warn("Error revoking preview URL:", e);
+      }
+    }
     setImageStorageKey(null);
     setImagePreviewUrl(null);
     setLatitude(null);
@@ -134,6 +175,7 @@ export default function SpotFixPage() {
           latitude={latitude}
           longitude={longitude}
           onReset={handleReset}
+          onChangePhoto={handleChangePhoto}
         />
       )}
     </main>

@@ -211,3 +211,125 @@ def test_missing_api_key_behavior():
             pass
     finally:
         settings.gemini_api_key = original_key
+
+
+def test_rejected_normal_road_no_issue():
+    payload = {
+        "validation_status": "REJECTED",
+        "is_civic_issue": False,
+        "category": None,
+        "confidence": 0.95,
+        "severity": None,
+        "visual_explanation": "Smooth asphalt roadway with clear lane markings and no visible damage.",
+        "rejection_reason": "No civic issue detected. Road is in normal operating condition.",
+    }
+
+    original_key = settings.gemini_api_key
+    settings.gemini_api_key = "test-key"
+    try:
+        service = GeminiVisionService(client=FakeGeminiClient(payload))
+        result = service.analyze_image(b"fake-bytes")
+
+        assert result.validation_status == "REJECTED"
+        assert result.is_civic_issue is False
+        assert result.category is None
+        assert result.severity is None
+        assert "No civic issue" in result.rejection_reason
+    finally:
+        settings.gemini_api_key = original_key
+
+
+def test_rejected_unsupported_civic_issue():
+    payload = {
+        "validation_status": "REJECTED",
+        "is_civic_issue": False,
+        "category": None,
+        "confidence": 0.88,
+        "severity": None,
+        "visual_explanation": "Vehicle parked illegally across pedestrian footpath.",
+        "rejection_reason": "Unsupported issue: illegal parking is not covered by SpotFix.",
+    }
+
+    original_key = settings.gemini_api_key
+    settings.gemini_api_key = "test-key"
+    try:
+        service = GeminiVisionService(client=FakeGeminiClient(payload))
+        result = service.analyze_image(b"fake-bytes")
+
+        assert result.validation_status == "REJECTED"
+        assert result.is_civic_issue is False
+        assert result.category is None
+        assert result.severity is None
+        assert "illegal parking" in result.rejection_reason
+    finally:
+        settings.gemini_api_key = original_key
+
+
+def test_unclear_blurry_image():
+    payload = {
+        "validation_status": "UNCLEAR",
+        "is_civic_issue": False,
+        "category": None,
+        "confidence": 0.25,
+        "severity": None,
+        "visual_explanation": "Severe camera shake and motion blur make road details illegible.",
+        "rejection_reason": "Image quality is too low to identify or verify a civic issue.",
+    }
+
+    original_key = settings.gemini_api_key
+    settings.gemini_api_key = "test-key"
+    try:
+        service = GeminiVisionService(client=FakeGeminiClient(payload))
+        result = service.analyze_image(b"fake-bytes")
+
+        assert result.validation_status == "UNCLEAR"
+        assert result.is_civic_issue is False
+        assert result.category is None
+        assert result.severity is None
+        assert "Image quality" in result.rejection_reason
+    finally:
+        settings.gemini_api_key = original_key
+
+
+def test_genuine_low_severity_issue_accepted():
+    payload = {
+        "validation_status": "ACCEPTED",
+        "is_civic_issue": True,
+        "category": "POTHOLE",
+        "confidence": 0.40,
+        "severity": "LOW",
+        "visual_explanation": "Small shallow surface wearing on edge of road, low traffic hazard.",
+    }
+
+    original_key = settings.gemini_api_key
+    settings.gemini_api_key = "test-key"
+    try:
+        service = GeminiVisionService(client=FakeGeminiClient(payload))
+        result = service.analyze_image(b"fake-bytes")
+
+        assert result.validation_status == "ACCEPTED"
+        assert result.is_civic_issue is True
+        assert result.category == "POTHOLE"
+        assert result.severity == "LOW"
+        assert result.confidence == 0.40
+    finally:
+        settings.gemini_api_key = original_key
+
+
+def test_gemini_api_failure_raises_service_error():
+    class BrokenGeminiClient:
+        def generate_content(self, *args, **kwargs):
+            raise RuntimeError("Google API network timeout")
+
+    original_key = settings.gemini_api_key
+    settings.gemini_api_key = "test-key"
+    try:
+        from app.services.gemini_vision import GeminiVisionServiceError
+        service = GeminiVisionService(client=BrokenGeminiClient())
+        try:
+            service.analyze_image(b"fake-bytes")
+            assert False, "Expected GeminiVisionServiceError"
+        except GeminiVisionServiceError as exc:
+            assert "failed" in str(exc).lower() or "timeout" in str(exc).lower()
+    finally:
+        settings.gemini_api_key = original_key
