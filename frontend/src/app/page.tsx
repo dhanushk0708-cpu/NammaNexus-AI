@@ -155,15 +155,28 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs opacity-80">
-            <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded">
-              Pillar 3 • Modular
-            </span>
-            <h3 className="text-lg font-bold text-slate-900 mt-2">CivicVoice AI</h3>
+          <Link
+            href="/civicvoice"
+            className="bg-white p-6 rounded-2xl border-2 border-red-200/90 shadow-xs hover:border-[#C8102E] transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-[#C8102E] uppercase bg-red-50 border border-red-200 px-2 py-0.5 rounded">
+                Pillar 3 • Ready
+              </span>
+              <span className="text-xs text-[#C8102E] font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                Explore <ArrowRight className="w-3 h-3" />
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mt-2 flex items-center gap-2">
+              CivicVoice AI
+              <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-1.5 py-0.2 rounded-full">
+                Live
+              </span>
+            </h3>
             <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-              Neighborhood sentiment analysis and community grievance theme extraction.
+              Public Opinion Intelligence — search topics, explore external discussions, understand different viewpoints, and share your opinion.
             </p>
-          </div>
+          </Link>
 
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs opacity-80">
             <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded">

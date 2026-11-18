@@ -7,6 +7,10 @@ from app.api.v1.endpoints.nammaserve_research import (
     booking_router,
     router as nammaserve_research_router,
 )
+from app.api.v1.endpoints.civicvoice import router as civicvoice_router
+from app.api.v1.endpoints.nammaserve_price_comparison import (
+    router as nammaserve_price_comparison_router,
+)
 
 
 app = FastAPI(
@@ -37,6 +41,14 @@ app.include_router(
 )
 app.include_router(
     booking_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    nammaserve_price_comparison_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    civicvoice_router,
     prefix="/api/v1",
 )
 
