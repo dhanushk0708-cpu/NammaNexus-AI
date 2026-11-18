@@ -20,6 +20,7 @@ import {
   Check,
   Lightbulb,
 } from "lucide-react";
+import SpotFixPromotions from "@/components/nammadeals/SpotFixPromotions";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -742,6 +743,13 @@ export default function SubmissionSummary({
                 </p>
               </div>
             </div>
+
+            {/* NammaDeals Independent Civic Rewards */}
+            <SpotFixPromotions
+              latitude={complaintResult.latitude}
+              longitude={complaintResult.longitude}
+              area={complaintResult.authority || undefined}
+            />
 
             <button
               type="button"
