@@ -41,6 +41,7 @@ class TargetingStrategy(str, Enum):
     RADIUS = "RADIUS"
     WARD = "WARD"
     CITYWIDE = "CITYWIDE"
+    ONLINE = "ONLINE"
 
 
 class OfferType(str, Enum):
@@ -68,6 +69,13 @@ class PaymentVerificationStatus(str, Enum):
     VERIFIED = "VERIFIED"
     FAILED = "FAILED"
     REFUNDED = "REFUNDED"
+
+
+class PromotionEventType(str, Enum):
+    IMPRESSION = "IMPRESSION"
+    CLICK = "CLICK"
+    CLAIM = "CLAIM"
+    REDEMPTION = "REDEMPTION"
 
 
 class BusinessRegistration(Base):
@@ -436,3 +444,61 @@ class AdvertiserPayment(Base):
 
     business: Mapped[Business] = relationship("Business", back_populates="payments")
     campaign: Mapped[Campaign | None] = relationship("Campaign", back_populates="payments")
+
+
+class PromotionEvent(Base):
+    """Reliable event tracking for impressions, clicks, claims and redemptions."""
+
+    __tablename__ = "nammadeals_promotion_events"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(30),
+        index=True,
+        nullable=False,
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("nammadeals_campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    offer_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("nammadeals_offers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    citizen_user_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    location_source: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    event_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+        nullable=False,
+    )
+
+    campaign: Mapped[Campaign] = relationship("Campaign")
+    offer: Mapped[Offer | None] = relationship("Offer")
+

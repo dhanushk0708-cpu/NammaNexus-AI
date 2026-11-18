@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints.nammadeals_deps import get_current_admin, get_current_user
@@ -23,10 +23,18 @@ from app.schemas.nammadeals import (
     OfferCreate,
     OfferRead,
     OfferUpdate,
+    PromotionEventCreate,
+    PromotionEventRead,
+    PromotionItem,
+    PromotionOfferItem,
+    PromotionSelectionRequest,
+    PromotionSelectionResponse,
 )
 from app.services.nammadeals import business as business_service
 from app.services.nammadeals import campaign as campaign_service
+from app.services.nammadeals import events as events_service
 from app.services.nammadeals import payment as payment_service
+from app.services.nammadeals import selection as selection_service
 
 router = APIRouter(
     prefix="/nammadeals",
@@ -466,3 +474,78 @@ def admin_verify_payment(
         return payment_service.admin_verify_payment(db, payment_id, data, admin_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ============================================================================
+# 6. Promotion Engine & Event Tracking
+# ============================================================================
+
+@router.post(
+    "/promotions/select",
+    response_model=PromotionSelectionResponse,
+    summary="Select relevant local business promotions for a citizen",
+)
+def select_promotions(
+    request: PromotionSelectionRequest,
+    x_user_id: Annotated[str | None, Header(alias="X-User-ID")] = None,
+    db: Session = Depends(get_db),
+):
+    """Dynamically select 2-3 local promotions based on citizen profile and/or SpotFix complaint locations."""
+    citizen_id = x_user_id or request.citizen_user_id or "anonymous_citizen"
+    try:
+        return selection_service.select_promotions(db, request, citizen_id)
+    except Exception as e:
+        # Promotion engine must fail gracefully without bringing down caller
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Promotion selection failed: {e}")
+
+
+@router.get(
+    "/promotions/{campaign_id}",
+    response_model=PromotionItem,
+    summary="Get promotion details for a campaign",
+)
+def get_promotion_details(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+):
+    campaign = campaign_service.get_campaign_by_id(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promotion campaign not found.")
+
+    valid_offers = [
+        PromotionOfferItem.model_validate(o)
+        for o in campaign.offers
+        if o.is_active and o.redemption_count < o.max_redemptions
+    ]
+
+    return PromotionItem(
+        campaign_id=campaign.id,
+        campaign_name=campaign.name,
+        campaign_type=campaign.campaign_type,
+        business_name=campaign.business.name,
+        business_category=campaign.business.category,
+        business_area=campaign.business.area,
+        matched_location_source="CITYWIDE",
+        distance_km=None,
+        offers=valid_offers,
+    )
+
+
+@router.post(
+    "/promotions/events",
+    response_model=PromotionEventRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record promotion impression or click",
+)
+def record_promotion_event(
+    data: PromotionEventCreate,
+    x_user_id: Annotated[str | None, Header(alias="X-User-ID")] = None,
+    db: Session = Depends(get_db),
+):
+    """Reliably records impression or click events reported by citizen client."""
+    citizen_id = x_user_id or "anonymous_citizen"
+    try:
+        return events_service.record_promotion_event(db, data, citizen_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+

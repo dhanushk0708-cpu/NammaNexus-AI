@@ -43,6 +43,8 @@ from app.models.nammadeals import (
     OfferType,
     PaymentMethod,
     PaymentVerificationStatus,
+    PromotionEvent,
+    PromotionEventType,
     TargetingStrategy,
 )
 
@@ -86,4 +88,6 @@ __all__ = [
     "AdvertiserPayment",
     "PaymentMethod",
     "PaymentVerificationStatus",
+    "PromotionEvent",
+    "PromotionEventType",
 ]

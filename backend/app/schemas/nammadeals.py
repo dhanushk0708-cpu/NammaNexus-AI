@@ -13,6 +13,7 @@ from app.models.nammadeals import (
     OfferType,
     PaymentMethod,
     PaymentVerificationStatus,
+    PromotionEventType,
     TargetingStrategy,
 )
 
@@ -338,3 +339,96 @@ class AdvertiserPaymentRead(BaseModel):
     admin_notes: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+# --- Promotion Engine Schemas ---
+
+class LocationPolicy(str, Enum):
+    PROFILE_ONLY = "PROFILE_ONLY"
+    COMPLAINT_ONLY = "COMPLAINT_ONLY"
+    PREFER_COMPLAINT = "PREFER_COMPLAINT"
+    PREFER_PROFILE = "PREFER_PROFILE"
+    COMBINED = "COMBINED"
+
+
+class CitizenProfileLocation(BaseModel):
+    state: str | None = Field(None, max_length=100)
+    city: str | None = Field("Bengaluru", max_length=100)
+    area: str | None = Field(None, max_length=100)
+    pincode: str | None = Field(None, pattern=r"^\d{6}$")
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+
+
+class SpotFixComplaintLocation(BaseModel):
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+    area: str | None = Field(None, max_length=100)
+    ward: str | None = Field(None, max_length=100)
+
+
+class PromotionSelectionRequest(BaseModel):
+    citizen_user_id: str | None = Field(None, max_length=100)
+    location_policy: LocationPolicy = LocationPolicy.COMBINED
+    profile_location: CitizenProfileLocation | None = None
+    complaint_location: SpotFixComplaintLocation | None = None
+    limit: int = Field(default=3, ge=1, le=10)
+
+
+class PromotionOfferItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    description: str | None = None
+    promotional_image_url: str | None = None
+    discount_type: DiscountType
+    discount_value: float
+    terms_and_conditions: str | None = None
+    valid_until: datetime
+    offer_type: OfferType
+    coupon_code: str | None = None
+
+
+class PromotionItem(BaseModel):
+    campaign_id: str
+    campaign_name: str
+    campaign_type: CampaignType
+    business_name: str
+    business_category: str
+    business_area: str
+    matched_location_source: Literal["COMPLAINT", "PROFILE", "NEARBY", "CITYWIDE", "ONLINE"]
+    distance_km: float | None = None
+    offers: list[PromotionOfferItem] = Field(default_factory=list)
+
+
+class PromotionSelectionResponse(BaseModel):
+    promotions: list[PromotionItem]
+    total_selected: int
+    location_sources_evaluated: list[str]
+    policy_applied: LocationPolicy
+
+
+# --- Promotion Event Tracking Schemas ---
+
+class PromotionEventCreate(BaseModel):
+    event_type: PromotionEventType
+    campaign_id: str = Field(..., max_length=36)
+    offer_id: str | None = Field(None, max_length=36)
+    location_source: str | None = Field(None, max_length=30)
+    idempotency_key: str | None = Field(None, max_length=100)
+    event_metadata: dict[str, Any] | None = None
+
+
+class PromotionEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    event_type: PromotionEventType
+    campaign_id: str
+    offer_id: str | None = None
+    citizen_user_id: str
+    location_source: str | None = None
+    idempotency_key: str | None = None
+    created_at: datetime
+
