@@ -11,6 +11,7 @@ from app.api.v1.endpoints.civicvoice import router as civicvoice_router
 from app.api.v1.endpoints.nammaserve_price_comparison import (
     router as nammaserve_price_comparison_router,
 )
+from app.api.v1.endpoints.nammadeals import router as nammadeals_router
 
 
 app = FastAPI(
@@ -49,6 +50,10 @@ app.include_router(
 )
 app.include_router(
     civicvoice_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    nammadeals_router,
     prefix="/api/v1",
 )
 

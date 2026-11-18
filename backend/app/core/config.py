@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     bluesky_api_base_url: str = "https://api.bsky.app"
     civicvoice_api_token: str | None = None
 
+    # NammaDeals — Local Business Promotions & Rewards
+    nammadeals_admin_token: str | None = None
+
     resend_api_key: str | None = None
     resend_from_email: str = "NammaNexus AI <notifications@nammanexus.ai>"
 

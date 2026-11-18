@@ -29,6 +29,22 @@ from app.models.nammaserve_research import (
     ResearchCandidate,
     ResearchCoverage,
 )
+from app.models.nammadeals import (
+    AdvertiserPayment,
+    Business,
+    BusinessRegistration,
+    BusinessRegistrationStatus,
+    BusinessStatus,
+    Campaign,
+    CampaignApprovalStatus,
+    CampaignType,
+    DiscountType,
+    Offer,
+    OfferType,
+    PaymentMethod,
+    PaymentVerificationStatus,
+    TargetingStrategy,
+)
 
 __all__ = [
     "Complaint",
@@ -56,4 +72,18 @@ __all__ = [
     "CivicVoiceCitizenSubmission",
     "CivicVoiceReport",
     "CivicVoiceReportAudit",
+    "BusinessRegistration",
+    "BusinessRegistrationStatus",
+    "Business",
+    "BusinessStatus",
+    "Campaign",
+    "CampaignApprovalStatus",
+    "CampaignType",
+    "TargetingStrategy",
+    "Offer",
+    "OfferType",
+    "DiscountType",
+    "AdvertiserPayment",
+    "PaymentMethod",
+    "PaymentVerificationStatus",
 ]

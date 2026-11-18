@@ -1,0 +1,340 @@
+import re
+from datetime import datetime
+from enum import Enum
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.models.nammadeals import (
+    BusinessRegistrationStatus,
+    BusinessStatus,
+    CampaignApprovalStatus,
+    CampaignType,
+    DiscountType,
+    OfferType,
+    PaymentMethod,
+    PaymentVerificationStatus,
+    TargetingStrategy,
+)
+
+
+# --- Business Registration Schemas ---
+
+class BusinessRegistrationCreate(BaseModel):
+    business_name: str = Field(..., min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    category: str = Field(..., min_length=2, max_length=100)
+    contact_name: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", max_length=255)
+    phone: str = Field(..., min_length=8, max_length=20)
+    address: str = Field(..., min_length=5, max_length=500)
+    city: str = Field("Bengaluru", min_length=2, max_length=100)
+    area: str = Field(..., min_length=2, max_length=100)
+    pincode: str = Field(..., pattern=r"^\d{6}$")
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        cleaned = "".join(c for c in v if c.isdigit() or c == "+")
+        digits_only = "".join(c for c in cleaned if c.isdigit())
+        if len(digits_only) < 10 or len(digits_only) > 15:
+            raise ValueError("Phone number must contain between 10 and 15 digits.")
+        return cleaned
+
+
+class BusinessRegistrationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    business_name: str
+    description: str | None = None
+    category: str
+    contact_name: str
+    email: str
+    phone: str
+    address: str
+    city: str
+    area: str
+    pincode: str
+    latitude: float | None = None
+    longitude: float | None = None
+    status: BusinessRegistrationStatus
+    rejection_reason: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BusinessRegistrationReviewRequest(BaseModel):
+    action: Literal["APPROVE", "REJECT"]
+    owner_user_id: str | None = Field(
+        None,
+        description="Assigned owner user ID when approving registration (e.g. from existing auth/user account)",
+    )
+    rejection_reason: str | None = Field(None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_action_fields(self) -> "BusinessRegistrationReviewRequest":
+        if self.action == "APPROVE" and not self.owner_user_id:
+            raise ValueError("owner_user_id is required when approving a registration.")
+        if self.action == "REJECT" and not self.rejection_reason:
+            raise ValueError("rejection_reason is required when rejecting a registration.")
+        return self
+
+
+# --- Business Schemas ---
+
+class BusinessCreate(BaseModel):
+    owner_user_id: str = Field(..., min_length=1, max_length=100)
+    registration_id: str | None = None
+    name: str = Field(..., min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    category: str = Field(..., min_length=2, max_length=100)
+    email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", max_length=255)
+    phone: str = Field(..., min_length=8, max_length=20)
+    address: str = Field(..., min_length=5, max_length=500)
+    city: str = Field("Bengaluru", min_length=2, max_length=100)
+    area: str = Field(..., min_length=2, max_length=100)
+    pincode: str = Field(..., pattern=r"^\d{6}$")
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+
+
+class BusinessUpdate(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    category: str | None = Field(None, min_length=2, max_length=100)
+    email: str | None = Field(None, pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", max_length=255)
+    phone: str | None = Field(None, min_length=8, max_length=20)
+    address: str | None = Field(None, min_length=5, max_length=500)
+    city: str | None = Field(None, min_length=2, max_length=100)
+    area: str | None = Field(None, min_length=2, max_length=100)
+    pincode: str | None = Field(None, pattern=r"^\d{6}$")
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+
+
+class BusinessStatusUpdateRequest(BaseModel):
+    status: BusinessStatus
+    reason: str | None = Field(None, max_length=1000)
+
+
+class BusinessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    owner_user_id: str
+    registration_id: str | None = None
+    name: str
+    description: str | None = None
+    category: str
+    email: str
+    phone: str
+    address: str
+    city: str
+    area: str
+    pincode: str
+    latitude: float | None = None
+    longitude: float | None = None
+    status: BusinessStatus
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+    rejection_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Campaign Schemas ---
+
+class CampaignCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    campaign_type: CampaignType = CampaignType.DISCOUNT
+    start_date: datetime
+    end_date: datetime
+    targeting_strategy: TargetingStrategy = TargetingStrategy.RADIUS
+    targeting_radius_km: float = Field(default=5.0, ge=0.1, le=50.0)
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+    priority: int = Field(default=10, ge=1, le=100)
+    frequency_limit_per_user: int = Field(default=3, ge=1, le=50)
+    placement_config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "CampaignCreate":
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be strictly after start_date.")
+        return self
+
+
+class CampaignUpdate(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    campaign_type: CampaignType | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    targeting_strategy: TargetingStrategy | None = None
+    targeting_radius_km: float | None = Field(None, ge=0.1, le=50.0)
+    latitude: float | None = Field(None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(None, ge=-180.0, le=180.0)
+    priority: int | None = Field(None, ge=1, le=100)
+    frequency_limit_per_user: int | None = Field(None, ge=1, le=50)
+    placement_config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_dates_if_both(self) -> "CampaignUpdate":
+        if self.start_date and self.end_date and self.end_date <= self.start_date:
+            raise ValueError("end_date must be strictly after start_date.")
+        return self
+
+
+class CampaignReviewRequest(BaseModel):
+    action: Literal["APPROVE", "REJECT", "SUSPEND"]
+    rejection_reason: str | None = Field(None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_review(self) -> "CampaignReviewRequest":
+        if self.action == "REJECT" and not self.rejection_reason:
+            raise ValueError("rejection_reason is required when rejecting a campaign.")
+        return self
+
+
+class CampaignToggleActiveRequest(BaseModel):
+    is_active: bool
+
+
+class CampaignRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    business_id: str
+    name: str
+    description: str | None = None
+    campaign_type: CampaignType
+    start_date: datetime
+    end_date: datetime
+    approval_status: CampaignApprovalStatus
+    is_active: bool
+    targeting_strategy: TargetingStrategy
+    targeting_radius_km: float
+    latitude: float | None = None
+    longitude: float | None = None
+    priority: int
+    frequency_limit_per_user: int
+    placement_config: dict[str, Any] | None = None
+    rejection_reason: str | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Offer Schemas ---
+
+class OfferCreate(BaseModel):
+    title: str = Field(..., min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    promotional_image_url: str | None = Field(None, max_length=500)
+    discount_type: DiscountType = DiscountType.PERCENTAGE
+    discount_value: float = Field(default=0.0, ge=0.0)
+    terms_and_conditions: str | None = Field(None, max_length=3000)
+    valid_from: datetime
+    valid_until: datetime
+    offer_type: OfferType = OfferType.COUPON
+    coupon_code: str | None = Field(None, min_length=3, max_length=50)
+    scratch_card_config: dict[str, Any] | None = None
+    max_redemptions: int = Field(default=100, ge=1)
+
+    @model_validator(mode="after")
+    def validate_offer(self) -> "OfferCreate":
+        if self.valid_until <= self.valid_from:
+            raise ValueError("valid_until must be strictly after valid_from.")
+        if self.offer_type == OfferType.COUPON and not self.coupon_code:
+            raise ValueError("coupon_code is required for COUPON offers.")
+        if self.offer_type == OfferType.SCRATCH_CARD and not self.scratch_card_config:
+            raise ValueError("scratch_card_config is required for SCRATCH_CARD offers.")
+        if self.discount_type == DiscountType.PERCENTAGE and self.discount_value > 100.0:
+            raise ValueError("PERCENTAGE discount value cannot exceed 100%.")
+        return self
+
+
+class OfferUpdate(BaseModel):
+    title: str | None = Field(None, min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    promotional_image_url: str | None = Field(None, max_length=500)
+    discount_type: DiscountType | None = None
+    discount_value: float | None = Field(None, ge=0.0)
+    terms_and_conditions: str | None = Field(None, max_length=3000)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+    offer_type: OfferType | None = None
+    coupon_code: str | None = Field(None, min_length=3, max_length=50)
+    scratch_card_config: dict[str, Any] | None = None
+    max_redemptions: int | None = Field(None, ge=1)
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_offer_update(self) -> "OfferUpdate":
+        if self.valid_from and self.valid_until and self.valid_until <= self.valid_from:
+            raise ValueError("valid_until must be strictly after valid_from.")
+        if self.discount_type == DiscountType.PERCENTAGE and self.discount_value is not None and self.discount_value > 100.0:
+            raise ValueError("PERCENTAGE discount value cannot exceed 100%.")
+        return self
+
+
+class OfferRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    campaign_id: str
+    title: str
+    description: str | None = None
+    promotional_image_url: str | None = None
+    discount_type: DiscountType
+    discount_value: float
+    terms_and_conditions: str | None = None
+    valid_from: datetime
+    valid_until: datetime
+    offer_type: OfferType
+    coupon_code: str | None = None
+    scratch_card_config: dict[str, Any] | None = None
+    max_redemptions: int
+    redemption_count: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Advertiser Payment Schemas ---
+
+class AdvertiserPaymentCreate(BaseModel):
+    campaign_id: str | None = None
+    amount: float = Field(..., gt=0.0)
+    currency: str = Field("INR", min_length=3, max_length=10)
+    transaction_id: str = Field(..., min_length=3, max_length=100)
+    payment_method: PaymentMethod = PaymentMethod.UPI
+    payment_date: datetime
+
+
+class AdvertiserPaymentVerifyRequest(BaseModel):
+    action: Literal["VERIFY", "FAIL", "REFUND"]
+    admin_notes: str | None = Field(None, max_length=1000)
+
+
+class AdvertiserPaymentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    business_id: str
+    campaign_id: str | None = None
+    amount: float
+    currency: str
+    transaction_id: str
+    payment_method: PaymentMethod
+    payment_date: datetime
+    verification_status: PaymentVerificationStatus
+    admin_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
