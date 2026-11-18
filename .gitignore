@@ -18,6 +18,7 @@ backend/.venv/
 # Backend generated storage
 
 backend/storage/
+storage/
 
 # Node.js dependencies
 

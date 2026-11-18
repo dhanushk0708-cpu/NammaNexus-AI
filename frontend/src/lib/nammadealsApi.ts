@@ -31,7 +31,9 @@ export interface PromotionItem {
   business_name: string;
   business_category: string;
   business_area: string;
-  matched_location_source: "COMPLAINT" | "PROFILE" | "NEARBY" | "CITYWIDE" | "ONLINE";
+  advertisement_image_url?: string | null;
+  store_maps_url?: string | null;
+  matched_location_source: "COMPLAINT" | "PROFILE" | "NEARBY" | "CITYWIDE" | "ONLINE" | "INVENTORY";
   distance_km?: number | null;
   offers: PromotionOfferItem[];
 }
@@ -54,6 +56,8 @@ export interface BusinessRegistrationData {
   city?: string;
   area: string;
   pincode: string;
+  google_maps_url?: string;
+  logo_url?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -61,6 +65,7 @@ export interface BusinessRegistrationData {
 export interface BusinessRegistrationRecord extends BusinessRegistrationData {
   id: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
+  google_maps_store_url?: string | null;
   rejection_reason?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -81,6 +86,9 @@ export interface BusinessRecord {
   city: string;
   area: string;
   pincode: string;
+  google_maps_url?: string | null;
+  logo_url?: string | null;
+  google_maps_store_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   status: "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
@@ -97,6 +105,16 @@ export interface CampaignRecord {
   name: string;
   description?: string | null;
   campaign_type: "DISCOUNT" | "COUPON" | "SCRATCH_CARD" | "AWARENESS";
+  advertisement_image_url?: string | null;
+  targeting_mode?: "PROFILE_ONLY" | "COMPLAINT_ONLY" | "BOTH";
+  status?: "DRAFT" | "ACTIVE" | "PAUSED" | "EXPIRED" | "DEACTIVATED";
+  business_name?: string | null;
+  business_area?: string | null;
+  store_maps_url?: string | null;
+  offers_count?: number | null;
+  max_claims?: number | null;
+  current_claims?: number | null;
+  redemptions_count?: number | null;
   start_date: string;
   end_date: string;
   approval_status: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "SUSPENDED";
@@ -492,6 +510,138 @@ export async function updateBusinessStatus(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Failed to update business status" }));
     throw new Error(err.detail || "Failed to update business status");
+  }
+  return res.json();
+}
+
+export interface AdminCampaignCreateData {
+  business_id: string;
+  name: string;
+  description?: string;
+  campaign_type?: "COUPON" | "SCRATCH_CARD";
+  offer_title: string;
+  offer_description?: string;
+  discount_type?: "PERCENTAGE" | "FLAT" | "FREEBIE" | "REWARD";
+  discount_value?: number;
+  coupon_code: string;
+  advertisement_image_url?: string;
+  targeting_mode?: "PROFILE_ONLY" | "COMPLAINT_ONLY" | "BOTH";
+  targeting_radius_km?: number;
+  start_date: string;
+  end_date: string;
+  max_claims?: number;
+  status?: "ACTIVE" | "DRAFT" | "PAUSED";
+  terms_and_conditions?: string;
+  scratch_card_config?: {
+    win_headline?: string;
+    description?: string;
+    min_discount?: number;
+    max_discount?: number;
+  };
+}
+
+export async function uploadCampaignImage(
+  file: File,
+  adminToken: string
+): Promise<{ success: boolean; image_key: string; image_url: string }> {
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const res = await fetch(`${API_BASE}/nammadeals/admin/campaigns/upload-image`, {
+    method: "POST",
+    headers: {
+      "X-Admin-Token": adminToken,
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Image upload failed" }));
+    throw new Error(err.detail || "Image upload failed");
+  }
+  return res.json();
+}
+
+export async function adminCreateCampaign(
+  data: AdminCampaignCreateData,
+  adminToken: string
+): Promise<CampaignRecord> {
+  const res = await fetch(`${API_BASE}/nammadeals/admin/campaigns`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Campaign creation failed" }));
+    throw new Error(err.detail || "Campaign creation failed");
+  }
+  return res.json();
+}
+
+export async function adminUpdateCampaign(
+  campaignId: string,
+  data: Partial<AdminCampaignCreateData>,
+  adminToken: string
+): Promise<CampaignRecord> {
+  const res = await fetch(`${API_BASE}/nammadeals/admin/campaigns/${campaignId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Campaign update failed" }));
+    throw new Error(err.detail || "Campaign update failed");
+  }
+  return res.json();
+}
+
+export async function adminSetCampaignStatus(
+  campaignId: string,
+  status: "DRAFT" | "ACTIVE" | "PAUSED" | "EXPIRED" | "DEACTIVATED",
+  adminToken: string
+): Promise<CampaignRecord> {
+  const res = await fetch(`${API_BASE}/nammadeals/admin/campaigns/${campaignId}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to update campaign status" }));
+    throw new Error(err.detail || "Failed to update campaign status");
+  }
+  return res.json();
+}
+
+export async function adminUpdateBusinessLocation(
+  businessId: string,
+  data: {
+    google_maps_url?: string;
+    latitude?: number;
+    longitude?: number;
+    area?: string;
+    address?: string;
+  },
+  adminToken: string
+): Promise<BusinessRecord> {
+  const res = await fetch(`${API_BASE}/nammadeals/admin/businesses/${businessId}/location`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to update business location" }));
+    throw new Error(err.detail || "Failed to update business location");
   }
   return res.json();
 }

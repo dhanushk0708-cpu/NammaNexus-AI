@@ -15,6 +15,8 @@ from app.models.nammadeals import (
     PaymentVerificationStatus,
     PromotionEventType,
     TargetingStrategy,
+    TargetingMode,
+    CampaignStatus,
     CouponClaimStatus,
 )
 
@@ -32,6 +34,8 @@ class BusinessRegistrationCreate(BaseModel):
     city: str = Field("Bengaluru", min_length=2, max_length=100)
     area: str = Field(..., min_length=2, max_length=100)
     pincode: str = Field(..., pattern=r"^\d{6}$")
+    google_maps_url: str | None = Field(None, max_length=1000, description="Google Maps location link of the physical shop")
+    logo_url: str | None = Field(None, max_length=500, description="Optional business logo image URL")
     latitude: float | None = Field(None, ge=-90.0, le=90.0)
     longitude: float | None = Field(None, ge=-180.0, le=180.0)
 
@@ -59,6 +63,9 @@ class BusinessRegistrationRead(BaseModel):
     city: str
     area: str
     pincode: str
+    google_maps_url: str | None = None
+    logo_url: str | None = None
+    google_maps_store_url: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     status: BusinessRegistrationStatus
@@ -100,6 +107,8 @@ class BusinessCreate(BaseModel):
     city: str = Field("Bengaluru", min_length=2, max_length=100)
     area: str = Field(..., min_length=2, max_length=100)
     pincode: str = Field(..., pattern=r"^\d{6}$")
+    google_maps_url: str | None = Field(None, max_length=1000, description="Google Maps location link of the physical shop")
+    logo_url: str | None = Field(None, max_length=500, description="Optional business logo image URL")
     latitude: float | None = Field(None, ge=-90.0, le=90.0)
     longitude: float | None = Field(None, ge=-180.0, le=180.0)
 
@@ -114,6 +123,8 @@ class BusinessUpdate(BaseModel):
     city: str | None = Field(None, min_length=2, max_length=100)
     area: str | None = Field(None, min_length=2, max_length=100)
     pincode: str | None = Field(None, pattern=r"^\d{6}$")
+    google_maps_url: str | None = Field(None, max_length=1000)
+    logo_url: str | None = Field(None, max_length=500)
     latitude: float | None = Field(None, ge=-90.0, le=90.0)
     longitude: float | None = Field(None, ge=-180.0, le=180.0)
 
@@ -138,6 +149,9 @@ class BusinessRead(BaseModel):
     city: str
     area: str
     pincode: str
+    google_maps_url: str | None = None
+    logo_url: str | None = None
+    google_maps_store_url: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     status: BusinessStatus
@@ -218,7 +232,10 @@ class CampaignRead(BaseModel):
     start_date: datetime
     end_date: datetime
     approval_status: CampaignApprovalStatus
+    status: CampaignStatus = CampaignStatus.ACTIVE
     is_active: bool
+    advertisement_image_url: str | None = None
+    targeting_mode: TargetingMode = TargetingMode.BOTH
     targeting_strategy: TargetingStrategy
     targeting_radius_km: float
     latitude: float | None = None
@@ -231,6 +248,74 @@ class CampaignRead(BaseModel):
     approved_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    # Computed fields for admin and citizen convenience
+    business_name: str | None = None
+    business_area: str | None = None
+    store_maps_url: str | None = None
+    offers_count: int | None = None
+    max_claims: int | None = None
+    current_claims: int | None = None
+    redemptions_count: int | None = None
+
+
+# --- Admin-Only Campaign Creation & Management Schemas ---
+
+class AdminCampaignCreateRequest(BaseModel):
+    business_id: str = Field(..., max_length=36)
+    name: str = Field(..., min_length=2, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    campaign_type: CampaignType = CampaignType.COUPON
+    offer_title: str = Field(..., min_length=2, max_length=200)
+    offer_description: str | None = Field(None, max_length=1000)
+    discount_type: DiscountType = DiscountType.PERCENTAGE
+    discount_value: float = Field(default=0.0, ge=0.0)
+    coupon_code: str = Field(..., min_length=3, max_length=50)
+    advertisement_image_url: str | None = Field(None, max_length=500)
+    targeting_mode: TargetingMode = TargetingMode.BOTH
+    targeting_radius_km: float = Field(default=3.0, gt=0.0, le=50.0)
+    start_date: datetime
+    end_date: datetime
+    max_claims: int = Field(default=500, gt=0)
+    status: CampaignStatus = CampaignStatus.ACTIVE
+    terms_and_conditions: str | None = Field(None, max_length=2000)
+    scratch_card_config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_dates_and_type(self) -> "AdminCampaignCreateRequest":
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be strictly after start_date.")
+        if self.campaign_type == CampaignType.SCRATCH_CARD and not self.scratch_card_config:
+            self.scratch_card_config = {
+                "win_headline": self.offer_title,
+                "description": self.offer_description or self.offer_title,
+                "min_discount": self.discount_value,
+                "max_discount": self.discount_value,
+            }
+        return self
+
+
+class AdminCampaignUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=200)
+    description: str | None = None
+    advertisement_image_url: str | None = None
+    targeting_mode: TargetingMode | None = None
+    targeting_radius_km: float | None = Field(None, gt=0.0, le=50.0)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    status: CampaignStatus | None = None
+    offer_title: str | None = None
+    offer_description: str | None = None
+    discount_type: DiscountType | None = None
+    discount_value: float | None = None
+    coupon_code: str | None = None
+    max_claims: int | None = Field(None, gt=0)
+    terms_and_conditions: str | None = None
+
+
+class AdminCampaignStatusUpdateRequest(BaseModel):
+    status: CampaignStatus
+    notes: str | None = Field(None, max_length=500)
 
 
 # --- Offer Schemas ---
@@ -399,7 +484,9 @@ class PromotionItem(BaseModel):
     business_name: str
     business_category: str
     business_area: str
-    matched_location_source: Literal["COMPLAINT", "PROFILE", "NEARBY", "CITYWIDE", "ONLINE"]
+    advertisement_image_url: str | None = None
+    store_maps_url: str | None = None
+    matched_location_source: Literal["COMPLAINT", "PROFILE", "NEARBY", "CITYWIDE", "ONLINE", "INVENTORY"]
     distance_km: float | None = None
     offers: list[PromotionOfferItem] = Field(default_factory=list)
 

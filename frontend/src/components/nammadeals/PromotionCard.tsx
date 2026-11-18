@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from "react";
-import { Tag, MapPin, Sparkles, ArrowRight, ShieldCheck, Clock } from "lucide-react";
+import { Tag, MapPin, Sparkles, ArrowRight, ShieldCheck, Clock, ExternalLink } from "lucide-react";
 import { PromotionItem, PromotionOfferItem, recordPromotionEvent } from "@/lib/nammadealsApi";
 
 interface PromotionCardProps {
@@ -72,13 +72,33 @@ export default function PromotionCard({
     return `${promotion.business_area}`;
   };
 
+  const getFullImageUrl = (url?: string | null) => {
+    if (!url) return null;
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    const base = process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://localhost:8000";
+    return `${base}${url}`;
+  };
+
+  const imageUrl = getFullImageUrl(promotion.advertisement_image_url);
+
   return (
     <div
       onClick={handleClick}
       className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs hover:shadow-md hover:border-red-300 transition-all p-5 flex flex-col justify-between cursor-pointer group relative overflow-hidden"
     >
       {/* Top Banner Accent */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#C8102E] to-[#FFC72C] opacity-80 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#C8102E] to-[#FFC72C] opacity-80 group-hover:opacity-100 transition-opacity z-10" />
+
+      {/* Visual Advertisement Image */}
+      {imageUrl && (
+        <div className="relative w-full h-36 -mx-5 -mt-5 mb-3 overflow-hidden bg-slate-100 border-b border-slate-100">
+          <img
+            src={imageUrl}
+            alt={promotion.campaign_name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+      )}
 
       <div className="space-y-3.5">
         {/* Top Badges */}
@@ -111,6 +131,20 @@ export default function PromotionCard({
             <MapPin className="w-3 h-3 text-slate-400" />
             {getLocationBadge()}
           </span>
+
+          {promotion.store_maps_url && (
+            <a
+              href={promotion.store_maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>View Store</span>
+            </a>
+          )}
+
           <span className="flex items-center gap-1 text-slate-500">
             <Clock className="w-3 h-3 text-slate-400" />
             Till {new Date(primaryOffer.valid_until).toLocaleDateString()}

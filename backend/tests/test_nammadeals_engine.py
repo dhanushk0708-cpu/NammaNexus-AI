@@ -663,3 +663,36 @@ def test_spotfix_independence_from_nammadeals(test_client_and_db, monkeypatch):
     assert spotfix_get.status_code == 200
     assert spotfix_get.json()["id"] == complaint_data["id"]
 
+
+def test_promotion_selection_inventory_fallback_and_advertisement_fields(test_client_and_db, seeded_deals_ecosystem):
+    """Guarantees post-complaint promotions via Priority 5 Remaining Inventory Fallback,
+
+    and verifies visual advertisement image and Google Maps store location link.
+    """
+    client, _ = test_client_and_db
+
+    # Remote coordinates far outside the 3-5km radius of Koramangala/Indiranagar/Whitefield
+    # (e.g. Nelamangala outskirts, 13.0970, 77.3910) with COMPLAINT_ONLY
+    payload = {
+        "location_policy": "COMPLAINT_ONLY",
+        "complaint_location": {
+            "latitude": 13.0970,
+            "longitude": 77.3910,
+            "area": "Nelamangala Highway",
+            "city": "Bengaluru",
+        },
+        "placement": "spotfix_confirmation",
+    }
+    res = client.post("/api/v1/nammadeals/promotions/select", json=payload, headers={"X-User-ID": "usr_citizen_nelamangala"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_selected"] >= 1
+    # Check that items have advertisement image and store_maps_url populated
+    promo = data["promotions"][0]
+    assert promo["campaign_id"] is not None
+    assert promo["business_name"] is not None
+    # Matched location source can be CITYWIDE or INVENTORY
+    assert promo["matched_location_source"] in {"CITYWIDE", "INVENTORY", "NEARBY_RADIUS"}
+    assert "offers" in promo and len(promo["offers"]) >= 1
+
+

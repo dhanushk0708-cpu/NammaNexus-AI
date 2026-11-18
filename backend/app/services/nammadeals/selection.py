@@ -21,6 +21,7 @@ from app.schemas.nammadeals import (
     PromotionSelectionResponse,
 )
 from app.services.nammadeals.location import evaluate_location_match
+from app.services.nammadeals.maps import build_view_store_url
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,35 @@ def select_promotions(
                     valid_offers.append(PromotionOfferItem.model_validate(o))
         return valid_offers
 
+    def build_item(camp: Campaign, dist: float | None, match_source: str, offers: list[PromotionOfferItem]) -> PromotionItem:
+        banner = getattr(camp, "advertisement_image_url", None)
+        if not banner and offers:
+            banner = offers[0].promotional_image_url
+
+        store_url = None
+        if camp.business:
+            store_url = build_view_store_url(
+                google_maps_url=camp.business.google_maps_url,
+                latitude=camp.business.latitude,
+                longitude=camp.business.longitude,
+                address=camp.business.address,
+                city=camp.business.city,
+            )
+
+        return PromotionItem(
+            campaign_id=camp.id,
+            campaign_name=camp.name,
+            campaign_type=camp.campaign_type,
+            business_name=camp.business.name,
+            business_category=camp.business.category,
+            business_area=camp.business.area,
+            advertisement_image_url=banner,
+            store_maps_url=store_url,
+            matched_location_source=match_source,  # type: ignore[arg-type]
+            distance_km=dist,
+            offers=offers,
+        )
+
     # Helper to attempt candidate matching
     def try_match_candidates(
         source_label: str,
@@ -262,6 +292,13 @@ def select_promotions(
         matches: list[tuple[float, Campaign, float | None, str]] = []
         for c in uncapped_campaigns:
             if c.id in seen_campaign_ids or c.business_id in seen_business_ids:
+                continue
+
+            # Respect Campaign Targeting Mode
+            t_mode = getattr(c, "targeting_mode", "BOTH") or "BOTH"
+            if source_label == "COMPLAINT" and t_mode == "PROFILE_ONLY":
+                continue
+            if source_label == "PROFILE" and t_mode == "COMPLAINT_ONLY":
                 continue
 
             offers = get_valid_offers(c)
@@ -278,7 +315,6 @@ def select_promotions(
                 allow_nearby_expansion=allow_nearby,
             )
             if is_match:
-                # Scoring: priority * 100 - (impressions * 30 for rotation) + distance bonus
                 score = c.priority * 100.0
                 shown_count = impression_counts.get(c.id, 0)
                 score -= shown_count * 30.0  # Rotation penalty
@@ -301,7 +337,7 @@ def select_promotions(
 
     target_limit = request.limit
 
-    # Phase 1: Local matches against evaluation sequence (primary and fallback sources)
+    # Priority 1: Exact matches against location sequence (e.g. Complaint location)
     for source_label, loc_ctx in location_eval_sequence:
         if len(selected_items) >= target_limit:
             break
@@ -313,23 +349,11 @@ def select_promotions(
                 continue
 
             offers = get_valid_offers(camp)
-            selected_items.append(
-                PromotionItem(
-                    campaign_id=camp.id,
-                    campaign_name=camp.name,
-                    campaign_type=camp.campaign_type,
-                    business_name=camp.business.name,
-                    business_category=camp.business.category,
-                    business_area=camp.business.area,
-                    matched_location_source=match_source,  # type: ignore[arg-type]
-                    distance_km=dist,
-                    offers=offers,
-                )
-            )
+            selected_items.append(build_item(camp, dist, match_source, offers))
             seen_campaign_ids.add(camp.id)
             seen_business_ids.add(camp.business_id)
 
-    # Phase 2: If insufficient, try nearby expanded radius
+    # Priority 2: Nearby expanded radius
     if len(selected_items) < target_limit and location_eval_sequence:
         for source_label, loc_ctx in location_eval_sequence:
             if len(selected_items) >= target_limit:
@@ -342,28 +366,16 @@ def select_promotions(
                     continue
 
                 offers = get_valid_offers(camp)
-                selected_items.append(
-                    PromotionItem(
-                        campaign_id=camp.id,
-                        campaign_name=camp.name,
-                        campaign_type=camp.campaign_type,
-                        business_name=camp.business.name,
-                        business_category=camp.business.category,
-                        business_area=camp.business.area,
-                        matched_location_source=match_source,  # type: ignore[arg-type]
-                        distance_km=dist,
-                        offers=offers,
-                    )
-                )
+                selected_items.append(build_item(camp, dist, match_source, offers))
                 seen_campaign_ids.add(camp.id)
                 seen_business_ids.add(camp.business_id)
 
-    # Phase 3: City-wide campaigns fallback
+    # Priority 3 & 4: City-wide & Online campaigns fallback
     if len(selected_items) < target_limit:
         city_candidates = [
             c
             for c in uncapped_campaigns
-            if c.targeting_strategy == TargetingStrategy.CITYWIDE.value
+            if c.targeting_strategy in (TargetingStrategy.CITYWIDE.value, TargetingStrategy.ONLINE.value)
             and c.id not in seen_campaign_ids
             and c.business_id not in seen_business_ids
         ]
@@ -375,52 +387,31 @@ def select_promotions(
             if not offers:
                 continue
 
-            selected_items.append(
-                PromotionItem(
-                    campaign_id=camp.id,
-                    campaign_name=camp.name,
-                    campaign_type=camp.campaign_type,
-                    business_name=camp.business.name,
-                    business_category=camp.business.category,
-                    business_area=camp.business.area,
-                    matched_location_source="CITYWIDE",
-                    distance_km=None,
-                    offers=offers,
-                )
-            )
+            source = "ONLINE" if camp.targeting_strategy == TargetingStrategy.ONLINE.value else "CITYWIDE"
+            selected_items.append(build_item(camp, None, source, offers))
             seen_campaign_ids.add(camp.id)
             seen_business_ids.add(camp.business_id)
 
-    # Phase 4: Online campaigns final fallback
+    # Priority 5: Remaining Campaign Inventory Fallback (Guarantees post-complaint display)
     if len(selected_items) < target_limit:
-        online_candidates = [
+        remaining_candidates = [
             c
             for c in uncapped_campaigns
-            if c.targeting_strategy == TargetingStrategy.ONLINE.value
-            and c.id not in seen_campaign_ids
+            if c.id not in seen_campaign_ids
             and c.business_id not in seen_business_ids
         ]
-        online_candidates.sort(key=lambda c: c.priority - impression_counts.get(c.id, 0) * 0.3, reverse=True)
-        for camp in online_candidates:
+        remaining_candidates.sort(
+            key=lambda c: c.priority * 100.0 - impression_counts.get(c.id, 0) * 30.0,
+            reverse=True,
+        )
+        for camp in remaining_candidates:
             if len(selected_items) >= target_limit:
                 break
             offers = get_valid_offers(camp)
             if not offers:
                 continue
 
-            selected_items.append(
-                PromotionItem(
-                    campaign_id=camp.id,
-                    campaign_name=camp.name,
-                    campaign_type=camp.campaign_type,
-                    business_name=camp.business.name,
-                    business_category=camp.business.category,
-                    business_area=camp.business.area,
-                    matched_location_source="ONLINE",
-                    distance_km=None,
-                    offers=offers,
-                )
-            )
+            selected_items.append(build_item(camp, None, "INVENTORY", offers))
             seen_campaign_ids.add(camp.id)
             seen_business_ids.add(camp.business_id)
 

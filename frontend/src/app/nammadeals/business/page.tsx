@@ -9,9 +9,6 @@ import {
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
-  Play,
-  Pause,
-  Send,
   CreditCard,
   BarChart3,
   MapPin,
@@ -19,6 +16,8 @@ import {
   ShieldCheck,
   ChevronRight,
   Sparkles,
+  ExternalLink,
+  Store,
 } from "lucide-react";
 import {
   BusinessRecord,
@@ -26,10 +25,6 @@ import {
   getMyBusinesses,
   getBusinessCampaigns,
   submitBusinessRegistration,
-  createCampaign,
-  createOffer,
-  submitCampaignForApproval,
-  toggleCampaignActive,
   recordAdvertiserPayment,
   redeemCouponInStore,
   getBusinessAnalytics,
@@ -38,7 +33,7 @@ import {
 } from "@/lib/nammadealsApi";
 
 export default function BusinessDashboardPage() {
-  const [userId, setUserId] = useState("usr_campaign_owner_1");
+  const [userId] = useState("usr_campaign_owner_1");
   const [businesses, setBusinesses] = useState<BusinessRecord[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<BusinessRecord | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
@@ -57,23 +52,8 @@ export default function BusinessDashboardPage() {
     address: "",
     area: "Koramangala",
     pincode: "560034",
+    google_maps_url: "",
     description: "",
-  });
-
-  // Campaign Creation State
-  const [showCreateCampaign, setShowCreateCampaign] = useState(false);
-  const [campData, setCampData] = useState({
-    name: "",
-    campaign_type: "DISCOUNT" as const,
-    start_date: new Date().toISOString().slice(0, 10),
-    end_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
-    targeting_strategy: "RADIUS" as const,
-    targeting_radius_km: 5.0,
-    offer_title: "",
-    discount_type: "PERCENTAGE" as const,
-    discount_value: 20,
-    coupon_code: "DEAL20",
-    terms: "Valid on dine-in orders above ₹500.",
   });
 
   // Payment Form State
@@ -104,7 +84,7 @@ export default function BusinessDashboardPage() {
         const activeBiz = bizList[0];
         setSelectedBusiness(activeBiz);
         const [campList, bizAnalytics] = await Promise.all([
-          getBusinessCampaigns(activeBiz.id, userId),
+          getBusinessCampaigns(activeBiz.id, userId).catch(() => []),
           getBusinessAnalytics(activeBiz.id, userId).catch(() => null),
         ]);
         setCampaigns(campList);
@@ -121,46 +101,30 @@ export default function BusinessDashboardPage() {
     }
   };
 
-  const handleRedeemCoupon = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedBusiness || !redeemCode.trim()) return;
-    try {
-      setRedeemLoading(true);
-      setRedeemError(null);
-      setRedeemResult(null);
-      const res = await redeemCouponInStore(
-        selectedBusiness.id,
-        userId,
-        redeemCode.trim(),
-        redeemNotes.trim() || undefined
-      );
-      setRedeemResult(res);
-      setRedeemCode("");
-      setRedeemNotes("");
-      // Refresh analytics & campaigns
-      const updatedAnalytics = await getBusinessAnalytics(selectedBusiness.id, userId).catch(() => null);
-      if (updatedAnalytics) setAnalytics(updatedAnalytics);
-    } catch (err: any) {
-      setRedeemError(err.message || "Redemption failed");
-    } finally {
-      setRedeemLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadData();
-  }, [userId]);
+  }, []);
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setLoading(true);
       await submitBusinessRegistration({
-        ...regData,
+        business_name: regData.business_name,
+        category: regData.category,
+        contact_name: regData.contact_name,
+        email: regData.email,
+        phone: regData.phone,
+        address: regData.address,
+        area: regData.area,
+        pincode: regData.pincode,
         city: "Bengaluru",
+        google_maps_url: regData.google_maps_url.trim() || undefined,
+        description: regData.description || undefined,
       });
       setRegSuccess(true);
       setShowRegisterForm(false);
+      await loadData();
     } catch (e: any) {
       alert(`Registration failed: ${e.message}`);
     } finally {
@@ -168,67 +132,28 @@ export default function BusinessDashboardPage() {
     }
   };
 
-  const handleCreateCampaignSubmit = async (e: React.FormEvent) => {
+  const handleRedeemCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBusiness) return;
+    if (!selectedBusiness || !redeemCode.trim()) return;
     try {
-      setLoading(true);
-      // 1. Create campaign
-      const camp = await createCampaign(
+      setRedeemLoading(true);
+      setRedeemError(null);
+      setRedeemResult(null);
+
+      const result = await redeemCouponInStore(
         selectedBusiness.id,
-        {
-          name: campData.name,
-          campaign_type: campData.campaign_type,
-          start_date: new Date(campData.start_date).toISOString(),
-          end_date: new Date(campData.end_date).toISOString(),
-          targeting_strategy: campData.targeting_strategy,
-          targeting_radius_km: Number(campData.targeting_radius_km),
-          priority: 15,
-        },
-        userId
+        redeemCode.trim().toUpperCase(),
+        userId,
+        redeemNotes.trim() || undefined
       );
-
-      // 2. Add offer
-      await createOffer(
-        camp.id,
-        {
-          title: campData.offer_title,
-          discount_type: campData.discount_type,
-          discount_value: Number(campData.discount_value),
-          terms_and_conditions: campData.terms,
-          valid_from: new Date(campData.start_date).toISOString(),
-          valid_until: new Date(campData.end_date).toISOString(),
-          offer_type: "COUPON",
-          coupon_code: campData.coupon_code,
-          max_redemptions: 100,
-        },
-        userId
-      );
-
-      setShowCreateCampaign(false);
+      setRedeemResult(result);
+      setRedeemCode("");
+      setRedeemNotes("");
       await loadData();
     } catch (e: any) {
-      alert(`Error creating campaign: ${e.message}`);
+      setRedeemError(e.message || "Failed to verify and redeem coupon.");
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmitForApproval = async (campaignId: string) => {
-    try {
-      await submitCampaignForApproval(campaignId, userId);
-      await loadData();
-    } catch (e: any) {
-      alert(`Approval submission failed: ${e.message}`);
-    }
-  };
-
-  const handleToggleActive = async (campaignId: string, currentActive: boolean) => {
-    try {
-      await toggleCampaignActive(campaignId, !currentActive, userId);
-      await loadData();
-    } catch (e: any) {
-      alert(`Failed to toggle campaign: ${e.message}`);
+      setRedeemLoading(false);
     }
   };
 
@@ -268,21 +193,19 @@ export default function BusinessDashboardPage() {
           <h1 className="text-2xl font-black text-slate-900 mt-1">Local Business Dashboard</h1>
         </div>
 
-        {/* Demo User Switcher */}
-        <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 p-2 rounded-xl">
-          <span className="text-slate-500 font-semibold">Owner ID:</span>
-          <input
-            type="text"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            className="font-mono bg-white border border-slate-300 rounded px-2 py-1 text-slate-800 text-xs w-44"
-          />
-          <button
-            onClick={loadData}
-            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded text-xs"
+        <div className="flex items-center gap-2">
+          <Link
+            href="/nammadeals"
+            className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl transition-colors"
           >
-            Switch
-          </button>
+            Citizen Offers View
+          </Link>
+          <Link
+            href="/nammadeals/admin"
+            className="text-xs font-bold text-[#C8102E] hover:text-white hover:bg-[#C8102E] bg-red-50 border border-red-200 px-3.5 py-2 rounded-xl transition-all"
+          >
+            Admin Center
+          </Link>
         </div>
       </div>
 
@@ -293,7 +216,7 @@ export default function BusinessDashboardPage() {
           <div className="space-y-1">
             <p className="font-bold text-sm">Registration Submitted Successfully!</p>
             <p>
-              Your local business application has been submitted and is currently in <span className="font-bold">PENDING</span> status. An administrator will review your address and verify your business before advertising is enabled.
+              Your local business application has been submitted and is currently in <span className="font-bold">PENDING</span> status. An administrator will review your physical shop location and verify your business.
             </p>
           </div>
         </div>
@@ -308,7 +231,7 @@ export default function BusinessDashboardPage() {
           <div className="space-y-1">
             <h3 className="text-lg font-bold text-slate-900">No Business Registered Yet</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Register your local store, cafe, or business on NammaNexus to promote targeted civic rewards and offers to nearby residents.
+              Register your physical store, restaurant, or service shop on NammaNexus. Once approved by our team, your shop can be featured in civic rewards and local promotions.
             </p>
           </div>
           <button
@@ -325,8 +248,10 @@ export default function BusinessDashboardPage() {
       {showRegisterForm && (
         <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 max-w-2xl mx-auto shadow-sm">
           <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-lg font-bold text-slate-900">Register a Local Business</h3>
-            <p className="text-xs text-slate-500">Provide verified business and contact information for Bengaluru.</p>
+            <h3 className="text-lg font-bold text-slate-900">Register a Local Physical Business</h3>
+            <p className="text-xs text-slate-500">
+              Provide verified physical shop location, contact details, and Google Maps link for Bengaluru.
+            </p>
           </div>
 
           <form onSubmit={handleRegisterSubmit} className="space-y-4 text-xs">
@@ -395,7 +320,7 @@ export default function BusinessDashboardPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-700">Area / Locality</label>
+                <label className="font-semibold text-slate-700">Area / Locality in Bengaluru</label>
                 <input
                   type="text"
                   required
@@ -419,12 +344,29 @@ export default function BusinessDashboardPage() {
                 />
               </div>
 
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Google Maps Share Link</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://maps.app.goo.gl/... or https://maps.google.com/?q=..."
+                  value={regData.google_maps_url}
+                  onChange={(e) => setRegData({ ...regData, google_maps_url: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  Paste the Google Maps share link of your physical store so citizens can find your shop.
+                </span>
+              </div>
+
               <div className="space-y-1 sm:col-span-2">
-                <label className="font-semibold text-slate-700">Full Store Address</label>
+                <label className="font-semibold text-slate-700">Full Physical Shop Address</label>
                 <textarea
                   required
                   rows={2}
-                  placeholder="123, 80ft Road, near Sony World Signal..."
+                  placeholder="123, 80ft Road, near Sony World Signal, Koramangala 4th Block..."
                   value={regData.address}
                   onChange={(e) => setRegData({ ...regData, address: e.target.value })}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900"
@@ -456,7 +398,7 @@ export default function BusinessDashboardPage() {
         <div className="space-y-8">
           {/* Status & Overview Bar */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-1">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                   {selectedBusiness.category}
@@ -475,32 +417,34 @@ export default function BusinessDashboardPage() {
               </div>
               <h2 className="text-2xl font-black text-slate-900">{selectedBusiness.name}</h2>
               <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                {selectedBusiness.address}, {selectedBusiness.area} — {selectedBusiness.pincode}
+                <Store className="w-3.5 h-3.5 text-slate-400" />
+                <span>{selectedBusiness.address}, {selectedBusiness.area} — {selectedBusiness.pincode}</span>
               </p>
+
+              {/* Google Maps Store Location Link */}
+              {selectedBusiness.google_maps_store_url && (
+                <div className="pt-1">
+                  <a
+                    href={selectedBusiness.google_maps_store_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>View Shop on Google Maps</span>
+                  </a>
+                </div>
+              )}
             </div>
 
-            {/* Quick Actions */}
+            {/* Merchant Payment Action */}
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setShowCreateCampaign(true)}
-                disabled={selectedBusiness.status !== "APPROVED"}
-                className={`text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 ${
-                  selectedBusiness.status === "APPROVED"
-                    ? "bg-[#C8102E] hover:bg-[#A60C24] text-white"
-                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
-                }`}
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>New Campaign</span>
-              </button>
-
               <button
                 onClick={() => setShowPaymentForm(true)}
                 className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl border border-slate-200 flex items-center gap-1.5"
               >
                 <CreditCard className="w-4 h-4 text-emerald-600" />
-                <span>Add Payment</span>
+                <span>Record Payment / Deposit</span>
               </button>
             </div>
           </div>
@@ -508,19 +452,21 @@ export default function BusinessDashboardPage() {
           {/* Business KPIs */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-slate-900">
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-              <span className="text-xs text-slate-500 font-semibold">Total Campaigns</span>
-              <div className="text-2xl font-black mt-1">{campaigns.length}</div>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
               <span className="text-xs text-slate-500 font-semibold">Active Campaigns</span>
               <div className="text-2xl font-black text-emerald-600 mt-1">
                 {campaigns.filter((c) => c.is_active).length}
               </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-              <span className="text-xs text-slate-500 font-semibold">Pending Approval</span>
+              <span className="text-xs text-slate-500 font-semibold">Customer Claims</span>
               <div className="text-2xl font-black text-amber-600 mt-1">
-                {campaigns.filter((c) => c.approval_status === "PENDING_APPROVAL").length}
+                {analytics ? analytics.claims : 0}
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
+              <span className="text-xs text-slate-500 font-semibold">Verified Redemptions</span>
+              <div className="text-2xl font-black text-emerald-600 mt-1">
+                {analytics ? analytics.redemptions : 0}
               </div>
             </div>
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
@@ -541,7 +487,7 @@ export default function BusinessDashboardPage() {
                 </div>
                 <h3 className="text-base font-extrabold text-slate-900">Verify & Redeem Citizen Coupon</h3>
                 <p className="text-xs text-slate-500">
-                  Verify a citizen&apos;s unique coupon code in real-time. Prevents duplicate claims and records audit trail.
+                  Verify a customer&apos;s unique coupon code in real-time. Prevents duplicate claims and records audit trail.
                 </p>
               </div>
             </div>
@@ -629,194 +575,11 @@ export default function BusinessDashboardPage() {
             )}
           </div>
 
-          {/* FULL-LIFECYCLE CAMPAIGN PERFORMANCE ANALYTICS */}
-          {analytics && (
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xs">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="space-y-0.5">
-                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                    <BarChart3 className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Real-Time Campaign Performance</span>
-                  </div>
-                  <h3 className="text-base font-extrabold text-slate-900">Conversion Funnel & Analytics</h3>
-                </div>
-                <div className="text-xs font-bold text-slate-500">
-                  Verified Ad Spend: <span className="text-[#C8102E]">₹{analytics.verified_payments_total.toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Impressions</span>
-                  <div className="text-xl font-black text-slate-900 mt-1">{analytics.impressions}</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Clicks</span>
-                  <div className="text-xl font-black text-slate-900 mt-1">{analytics.clicks}</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Claims</span>
-                  <div className="text-xl font-black text-amber-600 mt-1">{analytics.claims}</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Redemptions</span>
-                  <div className="text-xl font-black text-emerald-600 mt-1">{analytics.redemptions}</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">CTR</span>
-                  <div className="text-xl font-black text-indigo-600 mt-1">{analytics.overall_ctr_percentage}%</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Conversion</span>
-                  <div className="text-xl font-black text-[#C8102E] mt-1">{analytics.overall_redemption_rate_percentage}%</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* CREATE CAMPAIGN MODAL */}
-          {showCreateCampaign && (
-            <div className="bg-white border border-red-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-md">
-              <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Create Advertising Campaign</h3>
-                  <p className="text-xs text-slate-500">Configure promotion details, targeting radius, and offer.</p>
-                </div>
-                <button
-                  onClick={() => setShowCreateCampaign(false)}
-                  className="text-xs font-bold text-slate-400 hover:text-slate-600"
-                >
-                  Close
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateCampaignSubmit} className="space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Campaign Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Weekend Monsoon Special"
-                      value={campData.name}
-                      onChange={(e) => setCampData({ ...campData, name: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Targeting Strategy</label>
-                    <select
-                      value={campData.targeting_strategy}
-                      onChange={(e: any) => setCampData({ ...campData, targeting_strategy: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                    >
-                      <option value="RADIUS">Local Radius (Geo-Targeted)</option>
-                      <option value="WARD">Ward & Neighborhood</option>
-                      <option value="CITYWIDE">City-Wide (Bengaluru)</option>
-                      <option value="ONLINE">Online Offer</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Targeting Radius (km)</label>
-                    <input
-                      type="number"
-                      min={0.5}
-                      max={25}
-                      step={0.5}
-                      value={campData.targeting_radius_km}
-                      onChange={(e) => setCampData({ ...campData, targeting_radius_km: Number(e.target.value) })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">Start Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={campData.start_date}
-                      onChange={(e) => setCampData({ ...campData, start_date: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-slate-700">End Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={campData.end_date}
-                      onChange={(e) => setCampData({ ...campData, end_date: e.target.value })}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                    />
-                  </div>
-
-                  {/* Initial Offer details */}
-                  <div className="sm:col-span-2 pt-2 border-t border-slate-100">
-                    <h4 className="font-bold text-slate-900 text-sm mb-2">Initial Promotional Offer</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <label className="font-semibold text-slate-700">Offer Title</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. 25% Off on All Coffees"
-                          value={campData.offer_title}
-                          onChange={(e) => setCampData({ ...campData, offer_title: e.target.value })}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="font-semibold text-slate-700">Discount Value (%)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={campData.discount_value}
-                          onChange={(e) => setCampData({ ...campData, discount_value: Number(e.target.value) })}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="font-semibold text-slate-700">Coupon Code</label>
-                        <input
-                          type="text"
-                          required
-                          value={campData.coupon_code}
-                          onChange={(e) => setCampData({ ...campData, coupon_code: e.target.value.toUpperCase() })}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono font-bold"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 pt-3">
-                  <button
-                    type="submit"
-                    className="bg-[#C8102E] hover:bg-[#A60C24] text-white font-bold px-5 py-2.5 rounded-xl shadow-xs"
-                  >
-                    Save Campaign Draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateCampaign(false)}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 py-2.5 rounded-xl"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
           {/* RECORD PAYMENT MODAL */}
           {showPaymentForm && (
             <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 max-w-md shadow-md">
               <h3 className="text-base font-bold text-slate-900">Record Advertiser Payment</h3>
-              <p className="text-xs text-slate-500">Record an advertising deposit or campaign promotion fee.</p>
+              <p className="text-xs text-slate-500">Record an advertising deposit or promotion fee.</p>
 
               <form onSubmit={handlePaymentSubmit} className="space-y-3 text-xs">
                 <div>
@@ -869,13 +632,26 @@ export default function BusinessDashboardPage() {
             </div>
           )}
 
-          {/* CAMPAIGNS LIST */}
+          {/* ACTIVE CAMPAIGNS (READ-ONLY CURATED PROMOTIONS) */}
           <div className="space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Advertising Campaigns</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Active Advertising Campaigns</h3>
+                <p className="text-xs text-slate-500">
+                  Advertisements on NammaNexus are curated and managed centrally by platform administrators to guarantee high quality and civic relevance.
+                </p>
+              </div>
+              <div className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                Managed by Admin Desk
+              </div>
+            </div>
 
             {campaigns.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-500">
-                No campaigns created yet. Click &quot;New Campaign&quot; to configure your first promotion.
+              <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-500 space-y-2">
+                <p>No active campaigns running for this business currently.</p>
+                <p className="text-slate-400">
+                  Once your business registration is approved, contact the NammaDeals Admin team to schedule a targeted promotion.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">
@@ -888,28 +664,18 @@ export default function BusinessDashboardPage() {
                       <div className="flex items-center gap-2">
                         <span
                           className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase ${
-                            camp.approval_status === "APPROVED"
+                            camp.status === "ACTIVE" || camp.is_active
                               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                              : camp.approval_status === "PENDING_APPROVAL"
+                              : camp.status === "PAUSED"
                               ? "bg-amber-50 text-amber-800 border-amber-200"
-                              : camp.approval_status === "REJECTED"
-                              ? "bg-red-50 text-red-800 border-red-200"
                               : "bg-slate-100 text-slate-600 border-slate-200"
                           }`}
                         >
-                          {camp.approval_status}
-                        </span>
-
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            camp.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {camp.is_active ? "● ACTIVE & SERVING" : "○ PAUSED"}
+                          {camp.status || (camp.is_active ? "ACTIVE" : "PAUSED")}
                         </span>
 
                         <span className="text-xs text-slate-400">
-                          Strategy: {camp.targeting_strategy} ({camp.targeting_radius_km} km)
+                          Radius: {camp.targeting_radius_km} km • Strategy: {camp.targeting_strategy}
                         </span>
                       </div>
 
@@ -917,38 +683,12 @@ export default function BusinessDashboardPage() {
                       <p className="text-xs text-slate-500">
                         Validity: {new Date(camp.start_date).toLocaleDateString()} — {new Date(camp.end_date).toLocaleDateString()}
                       </p>
-                      {camp.rejection_reason && (
-                        <p className="text-xs text-red-600 font-semibold bg-red-50 p-2 rounded border border-red-100">
-                          Rejection Reason: {camp.rejection_reason}
-                        </p>
-                      )}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {camp.approval_status === "DRAFT" || camp.approval_status === "REJECTED" ? (
-                        <button
-                          onClick={() => handleSubmitForApproval(camp.id)}
-                          className="text-xs font-bold bg-[#C8102E] hover:bg-[#A60C24] text-white px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Submit for Approval</span>
-                        </button>
-                      ) : null}
-
-                      {camp.approval_status === "APPROVED" && (
-                        <button
-                          onClick={() => handleToggleActive(camp.id, camp.is_active)}
-                          className={`text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors ${
-                            camp.is_active
-                              ? "bg-amber-100 hover:bg-amber-200 text-amber-900"
-                              : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          }`}
-                        >
-                          {camp.is_active ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                          <span>{camp.is_active ? "Pause Serving" : "Activate Ads"}</span>
-                        </button>
-                      )}
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg">
+                        Admin-Managed
+                      </span>
                     </div>
                   </div>
                 ))}

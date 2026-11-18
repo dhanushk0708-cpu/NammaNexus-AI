@@ -302,3 +302,47 @@ def test_business_suspension_deactivates_campaigns(test_client_and_db):
     # Campaign should have been deactivated automatically
     session.refresh(camp)
     assert camp.is_active is False
+
+
+def test_business_registration_google_maps_url_and_coordinate_extraction(test_client_and_db):
+    """Verifies that valid Google Maps URLs are accepted and coordinates are extracted deterministically."""
+    client, _ = test_client_and_db
+
+    # 1. Registration with Google Maps link containing coordinates
+    payload = {
+        "business_name": "Third Wave Coffee Koramangala",
+        "category": "Cafe",
+        "contact_name": "Sushant",
+        "email": "sushant@thirdwave.in",
+        "phone": "+91 9876543299",
+        "address": "4th Block, 80 Feet Road",
+        "city": "Bengaluru",
+        "area": "Koramangala",
+        "pincode": "560034",
+        "google_maps_url": "https://maps.google.com/?q=12.9340,77.6220",
+    }
+    res = client.post("/api/v1/nammadeals/registrations", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["latitude"] == 12.9340
+    assert data["longitude"] == 77.6220
+    assert data["google_maps_url"] == "https://maps.google.com/?q=12.9340,77.6220"
+    assert "maps.google.com" in data["google_maps_store_url"]
+
+    # 2. Registration with invalid maps link is rejected
+    payload_bad_url = {
+        "business_name": "Phishing Shop",
+        "category": "Retail",
+        "contact_name": "Scammer",
+        "email": "scam@badurl.in",
+        "phone": "+91 9876543298",
+        "address": "MG Road",
+        "city": "Bengaluru",
+        "area": "MG Road",
+        "pincode": "560001",
+        "google_maps_url": "https://evil-maps.com/fake-store",
+    }
+    res_bad = client.post("/api/v1/nammadeals/registrations", json=payload_bad_url)
+    assert res_bad.status_code == 400
+    assert "Invalid Google Maps link" in res_bad.json()["detail"]
+

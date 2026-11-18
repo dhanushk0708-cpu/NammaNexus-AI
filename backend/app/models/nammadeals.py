@@ -37,6 +37,20 @@ class CampaignApprovalStatus(str, Enum):
     SUSPENDED = "SUSPENDED"
 
 
+class CampaignStatus(str, Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    EXPIRED = "EXPIRED"
+    DEACTIVATED = "DEACTIVATED"
+
+
+class TargetingMode(str, Enum):
+    PROFILE_ONLY = "PROFILE_ONLY"
+    COMPLAINT_ONLY = "COMPLAINT_ONLY"
+    BOTH = "BOTH"
+
+
 class CampaignType(str, Enum):
     DISCOUNT = "DISCOUNT"
     COUPON = "COUPON"
@@ -105,6 +119,8 @@ class BusinessRegistration(Base):
     city: Mapped[str] = mapped_column(String(100), server_default="Bengaluru", nullable=False)
     area: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     pincode: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    google_maps_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -165,6 +181,8 @@ class Business(Base):
     city: Mapped[str] = mapped_column(String(100), server_default="Bengaluru", nullable=False)
     area: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     pincode: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    google_maps_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -242,11 +260,25 @@ class Campaign(Base):
         index=True,
         nullable=False,
     )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default=CampaignStatus.ACTIVE.value,
+        server_default=CampaignStatus.ACTIVE.value,
+        index=True,
+        nullable=False,
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         server_default="false",
         index=True,
+        nullable=False,
+    )
+    advertisement_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    targeting_mode: Mapped[str] = mapped_column(
+        String(30),
+        default=TargetingMode.BOTH.value,
+        server_default=TargetingMode.BOTH.value,
         nullable=False,
     )
 

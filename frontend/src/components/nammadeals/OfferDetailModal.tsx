@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from "react";
-import { X, Copy, Check, Sparkles, MapPin, Calendar, Tag, ShieldCheck } from "lucide-react";
+import { X, Copy, Check, Sparkles, MapPin, Calendar, Tag, ShieldCheck, ExternalLink } from "lucide-react";
 import { PromotionItem, PromotionOfferItem, saveClaimedCoupon, claimCoupon } from "@/lib/nammadealsApi";
 
 interface OfferDetailModalProps {
@@ -21,6 +21,15 @@ export default function OfferDetailModal({
   const [claimed, setClaimed] = useState(false);
 
   if (!promotion || !offer) return null;
+
+  const getFullImageUrl = (url?: string | null) => {
+    if (!url) return null;
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    const base = process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://localhost:8000";
+    return `${base}${url}`;
+  };
+
+  const imageUrl = getFullImageUrl(promotion.advertisement_image_url);
 
   const handleCopy = () => {
     if (offer.coupon_code) {
@@ -80,21 +89,28 @@ export default function OfferDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 relative">
+      <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 relative max-h-[90vh] flex flex-col">
         {/* Top Accent Gradient */}
-        <div className="h-2 w-full bg-gradient-to-r from-[#C8102E] via-[#FFC72C] to-[#C8102E]" />
+        <div className="h-2 w-full bg-gradient-to-r from-[#C8102E] via-[#FFC72C] to-[#C8102E] shrink-0" />
+
+        {/* Visual Promotional Banner Image */}
+        {imageUrl && (
+          <div className="w-full h-44 overflow-hidden bg-slate-100 border-b border-slate-100 shrink-0">
+            <img src={imageUrl} alt={promotion.campaign_name} className="w-full h-full object-cover" />
+          </div>
+        )}
 
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+          className="absolute top-4 right-4 p-2 text-slate-500 hover:text-slate-800 rounded-full bg-white/80 hover:bg-white shadow-xs transition-colors z-20"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="p-6 sm:p-8 space-y-6">
+        <div className="p-6 sm:p-8 space-y-5 overflow-y-auto">
           {/* Business & Category Header */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold text-[#C8102E] uppercase bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
                 {promotion.business_category}
@@ -106,6 +122,20 @@ export default function OfferDetailModal({
               </span>
             </div>
             <h3 className="text-xl font-black text-slate-900">{promotion.business_name}</h3>
+
+            {promotion.store_maps_url && (
+              <div>
+                <a
+                  href={promotion.store_maps_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors mt-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>View Store Location on Google Maps</span>
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Offer Highlight Box */}

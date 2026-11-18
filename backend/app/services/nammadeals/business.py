@@ -10,20 +10,109 @@ from app.models.nammadeals import (
     Campaign,
 )
 from app.schemas.nammadeals import (
+    BusinessRead,
     BusinessRegistrationCreate,
+    BusinessRegistrationRead,
     BusinessRegistrationReviewRequest,
     BusinessStatusUpdateRequest,
     BusinessUpdate,
 )
+from app.services.nammadeals.maps import (
+    build_view_store_url,
+    extract_coordinates_from_maps_url,
+    is_valid_google_maps_url,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def build_registration_read(r: BusinessRegistration) -> BusinessRegistrationRead:
+    store_url = build_view_store_url(
+        google_maps_url=r.google_maps_url,
+        latitude=r.latitude,
+        longitude=r.longitude,
+        address=r.address,
+        city=r.city,
+    )
+    return BusinessRegistrationRead(
+        id=r.id,
+        business_name=r.business_name,
+        description=r.description,
+        category=r.category,
+        contact_name=r.contact_name,
+        email=r.email,
+        phone=r.phone,
+        address=r.address,
+        city=r.city,
+        area=r.area,
+        pincode=r.pincode,
+        google_maps_url=r.google_maps_url,
+        logo_url=r.logo_url,
+        google_maps_store_url=store_url,
+        latitude=r.latitude,
+        longitude=r.longitude,
+        status=BusinessRegistrationStatus(r.status),
+        rejection_reason=r.rejection_reason,
+        reviewed_by=r.reviewed_by,
+        reviewed_at=r.reviewed_at,
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+    )
+
+
+def build_business_read(b: Business) -> BusinessRead:
+    store_url = build_view_store_url(
+        google_maps_url=b.google_maps_url,
+        latitude=b.latitude,
+        longitude=b.longitude,
+        address=b.address,
+        city=b.city,
+    )
+    return BusinessRead(
+        id=b.id,
+        owner_user_id=b.owner_user_id,
+        registration_id=b.registration_id,
+        name=b.name,
+        description=b.description,
+        category=b.category,
+        email=b.email,
+        phone=b.phone,
+        address=b.address,
+        city=b.city,
+        area=b.area,
+        pincode=b.pincode,
+        google_maps_url=b.google_maps_url,
+        logo_url=b.logo_url,
+        google_maps_store_url=store_url,
+        latitude=b.latitude,
+        longitude=b.longitude,
+        status=BusinessStatus(b.status),
+        verified_at=b.verified_at,
+        verified_by=b.verified_by,
+        rejection_reason=b.rejection_reason,
+        created_at=b.created_at,
+        updated_at=b.updated_at,
+    )
 
 
 def submit_registration(db: Session, data: BusinessRegistrationCreate) -> BusinessRegistration:
     """Submit a prospective business registration request.
 
     New registrations enter PENDING status and must be verified by an administrator.
+    Validates Google Maps link if supplied and extracts coordinates when reliably possible.
     """
+    maps_url = data.google_maps_url.strip() if data.google_maps_url and data.google_maps_url.strip() else None
+    if maps_url and not is_valid_google_maps_url(maps_url):
+        raise ValueError("Invalid Google Maps link. Please provide a valid maps.google.com or maps.app.goo.gl link.")
+
+    lat = data.latitude
+    lng = data.longitude
+    if maps_url and (lat is None or lng is None):
+        extracted_lat, extracted_lng = extract_coordinates_from_maps_url(maps_url)
+        if extracted_lat is not None and extracted_lng is not None:
+            lat = extracted_lat
+            lng = extracted_lng
+
     registration = BusinessRegistration(
         business_name=data.business_name,
         description=data.description,
@@ -35,8 +124,10 @@ def submit_registration(db: Session, data: BusinessRegistrationCreate) -> Busine
         city=data.city,
         area=data.area,
         pincode=data.pincode,
-        latitude=data.latitude,
-        longitude=data.longitude,
+        google_maps_url=maps_url,
+        logo_url=data.logo_url,
+        latitude=lat,
+        longitude=lng,
         status=BusinessRegistrationStatus.PENDING.value,
     )
     db.add(registration)
@@ -109,6 +200,8 @@ def review_registration(
             city=registration.city,
             area=registration.area,
             pincode=registration.pincode,
+            google_maps_url=registration.google_maps_url,
+            logo_url=registration.logo_url,
             latitude=registration.latitude,
             longitude=registration.longitude,
             status=BusinessStatus.APPROVED.value,
@@ -162,16 +255,37 @@ def update_business(
     business = get_business_by_id(db, business_id)
     if not business:
         raise ValueError(f"Business '{business_id}' not found.")
-    if business.owner_user_id != owner_user_id:
+    if business.owner_user_id != owner_user_id and owner_user_id != "admin":
         raise PermissionError("You do not have permission to modify this business.")
 
     update_dict = data.model_dump(exclude_unset=True)
+    if "google_maps_url" in update_dict and update_dict["google_maps_url"]:
+        maps_url = update_dict["google_maps_url"].strip()
+        if not is_valid_google_maps_url(maps_url):
+            raise ValueError("Invalid Google Maps link.")
+        update_dict["google_maps_url"] = maps_url
+        if "latitude" not in update_dict or update_dict["latitude"] is None:
+            extracted_lat, extracted_lng = extract_coordinates_from_maps_url(maps_url)
+            if extracted_lat is not None and extracted_lng is not None:
+                update_dict["latitude"] = extracted_lat
+                update_dict["longitude"] = extracted_lng
+
     for field, val in update_dict.items():
         setattr(business, field, val)
 
     db.commit()
     db.refresh(business)
     return business
+
+
+def admin_update_business(
+    db: Session,
+    business_id: str,
+    data: BusinessUpdate,
+    admin_id: str,
+) -> Business:
+    """Admin edits or verifies business location and profile details."""
+    return update_business(db, business_id, owner_user_id="admin", data=data)
 
 
 def update_business_status(

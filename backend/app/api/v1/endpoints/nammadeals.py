@@ -1,11 +1,16 @@
+from pathlib import Path
 from typing import Annotated
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints.nammadeals_deps import get_current_admin, get_current_user
 from app.db.dependencies import get_db
 from app.models.nammadeals import Business
 from app.schemas.nammadeals import (
+    AdminCampaignCreateRequest,
+    AdminCampaignStatusUpdateRequest,
+    AdminCampaignUpdateRequest,
     AdminPlatformAnalyticsRead,
     AdvertiserPaymentCreate,
     AdvertiserPaymentRead,
@@ -40,6 +45,19 @@ from app.schemas.nammadeals import (
     ScratchCardRevealRead,
     ScratchCardRevealRequest,
 )
+from app.services.image_validation import (
+    ImageDimensionsTooSmallError,
+    ImageQualityError,
+    ImageTooLargeError,
+    InvalidImageFileError,
+    UnsupportedImageTypeError,
+    validate_image_upload,
+)
+from app.services.storage.local import (
+    LocalStorageService,
+    StorageKeyNotFoundError,
+    StorageKeyValidationError,
+)
 from app.services.nammadeals import analytics as analytics_service
 from app.services.nammadeals import business as business_service
 from app.services.nammadeals import campaign as campaign_service
@@ -47,11 +65,14 @@ from app.services.nammadeals import claims as claims_service
 from app.services.nammadeals import events as events_service
 from app.services.nammadeals import payment as payment_service
 from app.services.nammadeals import selection as selection_service
+from app.services.nammadeals.maps import build_view_store_url
 
 router = APIRouter(
     prefix="/nammadeals",
     tags=["NammaDeals"],
 )
+
+nammadeals_storage = LocalStorageService(Path("storage/nammadeals"))
 
 
 # ============================================================================
@@ -71,7 +92,7 @@ def submit_business_registration(
     """Prospective business owners submit their business details for verification."""
     try:
         registration = business_service.submit_registration(db, data)
-        return registration
+        return business_service.build_registration_read(registration)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -89,7 +110,8 @@ def admin_list_registrations(
     db: Session = Depends(get_db),
 ):
     """Admin reviews pending or historical business registrations."""
-    return business_service.list_registrations(db, status=status_filter, skip=skip, limit=limit)
+    regs = business_service.list_registrations(db, status=status_filter, skip=skip, limit=limit)
+    return [business_service.build_registration_read(r) for r in regs]
 
 
 @router.get(
@@ -105,7 +127,7 @@ def admin_get_registration(
     reg = business_service.get_registration(db, reg_id)
     if not reg:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registration not found.")
-    return reg
+    return business_service.build_registration_read(reg)
 
 
 @router.post(
@@ -122,8 +144,8 @@ def admin_review_registration(
     try:
         registration, business = business_service.review_registration(db, reg_id, review_data, admin_id)
         return {
-            "registration": BusinessRegistrationRead.model_validate(registration),
-            "business": BusinessRead.model_validate(business) if business else None,
+            "registration": business_service.build_registration_read(registration),
+            "business": business_service.build_business_read(business) if business else None,
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -142,7 +164,8 @@ def get_my_businesses(
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return business_service.get_businesses_by_owner(db, user_id)
+    businesses = business_service.get_businesses_by_owner(db, user_id)
+    return [business_service.build_business_read(b) for b in businesses]
 
 
 @router.get(
@@ -163,7 +186,7 @@ def get_business(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to view this business.",
         )
-    return business
+    return business_service.build_business_read(business)
 
 
 @router.patch(
@@ -178,7 +201,8 @@ def update_business(
     db: Session = Depends(get_db),
 ):
     try:
-        return business_service.update_business(db, business_id, user_id, data)
+        business = business_service.update_business(db, business_id, user_id, data)
+        return business_service.build_business_read(business)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except PermissionError as e:
@@ -197,20 +221,94 @@ def admin_update_business_status(
     db: Session = Depends(get_db),
 ):
     try:
-        return business_service.update_business_status(db, business_id, status_data, admin_id)
+        business = business_service.update_business_status(db, business_id, status_data, admin_id)
+        return business_service.build_business_read(business)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.patch(
+    "/admin/businesses/{business_id}/location",
+    response_model=BusinessRead,
+    summary="Admin: Verify or edit business location, coordinates, and Google Maps URL",
+)
+def admin_update_business_location(
+    business_id: str,
+    data: BusinessUpdate,
+    admin_id: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        business = business_service.admin_update_business(db, business_id, data, admin_id)
+        return business_service.build_business_read(business)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 # ============================================================================
-# 3. Campaigns
+# 3. Visual Image Upload & Public Serving
+# ============================================================================
+
+@router.post(
+    "/admin/campaigns/upload-image",
+    summary="Admin: Upload advertisement promotional banner image",
+)
+async def admin_upload_campaign_image(
+    image: UploadFile = File(...),
+    _admin: str = Depends(get_current_admin),
+):
+    """Uploads, validates, and stores a visual promotional banner image for advertisements."""
+    image_bytes = await image.read()
+    try:
+        extension = validate_image_upload(image_bytes, image.content_type)
+    except UnsupportedImageTypeError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except ImageTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except (
+        InvalidImageFileError,
+        ImageDimensionsTooSmallError,
+        ImageQualityError,
+    ) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    stored_filename = await nammadeals_storage.save(image_bytes, extension)
+    return {
+        "success": True,
+        "image_key": stored_filename,
+        "image_url": f"/api/v1/nammadeals/images/{stored_filename}",
+        "content_type": image.content_type,
+        "size_bytes": len(image_bytes),
+    }
+
+
+@router.get(
+    "/images/{image_key}",
+    summary="Public: Serve advertisement or business image",
+)
+def get_nammadeals_image(image_key: str):
+    """Streams visual advertisement images securely from local storage."""
+    try:
+        validated_key = nammadeals_storage.validate_image_reference(image_key)
+        file_path = nammadeals_storage.get_path(validated_key)
+        return FileResponse(path=file_path)
+    except StorageKeyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Image not found.") from exc
+    except StorageKeyValidationError as exc:
+        raise HTTPException(status_code=400, detail="Invalid image key.") from exc
+
+
+# ============================================================================
+# 4. Campaigns (Admin Authoritative)
 # ============================================================================
 
 @router.post(
     "/businesses/{business_id}/campaigns",
     response_model=CampaignRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new campaign for a business",
+    summary="Create a new campaign for a business (Admin Only)",
 )
 def create_campaign(
     business_id: str,
@@ -218,10 +316,64 @@ def create_campaign(
     user_id: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Enforce Critical Business Rule: Only platform admins can create or publish campaigns
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only platform administrators can create or publish campaigns.",
+    )
+
+
+@router.post(
+    "/admin/campaigns",
+    response_model=CampaignRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Admin: Create an advertisement campaign directly for an approved business",
+)
+def admin_create_campaign(
+    data: AdminCampaignCreateRequest,
+    admin_id: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin creates a complete campaign with offer, targeting, and advertisement image."""
     try:
-        return campaign_service.create_campaign(db, business_id, user_id, data)
-    except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        campaign = campaign_service.admin_create_campaign(db, data, admin_id)
+        return campaign_service.build_campaign_read(db, campaign)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put(
+    "/admin/campaigns/{campaign_id}",
+    response_model=CampaignRead,
+    summary="Admin: Edit campaign configuration, offer, schedule, or image",
+)
+def admin_update_campaign(
+    campaign_id: str,
+    data: AdminCampaignUpdateRequest,
+    admin_id: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        campaign = campaign_service.admin_update_campaign(db, campaign_id, data, admin_id)
+        return campaign_service.build_campaign_read(db, campaign)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.patch(
+    "/admin/campaigns/{campaign_id}/status",
+    response_model=CampaignRead,
+    summary="Admin: Set campaign lifecycle status (DRAFT, ACTIVE, PAUSED, EXPIRED, DEACTIVATED)",
+)
+def admin_set_campaign_status(
+    campaign_id: str,
+    data: AdminCampaignStatusUpdateRequest,
+    admin_id: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        campaign = campaign_service.admin_set_campaign_status(db, campaign_id, data.status, admin_id)
+        return campaign_service.build_campaign_read(db, campaign)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -237,7 +389,8 @@ def list_business_campaigns(
     db: Session = Depends(get_db),
 ):
     try:
-        return campaign_service.list_campaigns_for_business(db, business_id, user_id)
+        campaigns = campaign_service.list_campaigns_for_business(db, business_id, user_id)
+        return [campaign_service.build_campaign_read(db, c) for c in campaigns]
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
@@ -262,7 +415,7 @@ def get_campaign(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to view this campaign.",
         )
-    return campaign
+    return campaign_service.build_campaign_read(db, campaign)
 
 
 @router.patch(
@@ -277,7 +430,8 @@ def update_campaign(
     db: Session = Depends(get_db),
 ):
     try:
-        return campaign_service.update_campaign(db, campaign_id, user_id, data)
+        campaign = campaign_service.update_campaign(db, campaign_id, user_id, data)
+        return campaign_service.build_campaign_read(db, campaign)
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
@@ -295,7 +449,8 @@ def submit_campaign_for_approval(
     db: Session = Depends(get_db),
 ):
     try:
-        return campaign_service.submit_campaign_for_approval(db, campaign_id, user_id)
+        campaign = campaign_service.submit_campaign_for_approval(db, campaign_id, user_id)
+        return campaign_service.build_campaign_read(db, campaign)
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
@@ -314,7 +469,8 @@ def toggle_campaign_active(
     db: Session = Depends(get_db),
 ):
     try:
-        return campaign_service.toggle_campaign_active(db, campaign_id, user_id, data.is_active)
+        campaign = campaign_service.toggle_campaign_active(db, campaign_id, user_id, data.is_active)
+        return campaign_service.build_campaign_read(db, campaign)
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
@@ -333,7 +489,8 @@ def admin_list_campaigns(
     _admin: str = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    return campaign_service.admin_list_campaigns(db, approval_status=approval_status, skip=skip, limit=limit)
+    campaigns = campaign_service.admin_list_campaigns(db, approval_status=approval_status, skip=skip, limit=limit)
+    return [campaign_service.build_campaign_read(db, c) for c in campaigns]
 
 
 @router.post(
@@ -530,13 +687,25 @@ def get_promotion_details(
         if o.is_active and o.redemption_count < o.max_redemptions
     ]
 
+    store_url = None
+    if campaign.business:
+        store_url = build_view_store_url(
+            google_maps_url=campaign.business.google_maps_url,
+            latitude=campaign.business.latitude,
+            longitude=campaign.business.longitude,
+            address=campaign.business.address,
+            city=campaign.business.city,
+        )
+
     return PromotionItem(
         campaign_id=campaign.id,
         campaign_name=campaign.name,
         campaign_type=campaign.campaign_type,
-        business_name=campaign.business.name,
-        business_category=campaign.business.category,
-        business_area=campaign.business.area,
+        business_name=campaign.business.name if campaign.business else "",
+        business_category=campaign.business.category if campaign.business else "",
+        business_area=campaign.business.area if campaign.business else "",
+        advertisement_image_url=getattr(campaign, "advertisement_image_url", None),
+        store_maps_url=store_url,
         matched_location_source="CITYWIDE",
         distance_km=None,
         offers=valid_offers,

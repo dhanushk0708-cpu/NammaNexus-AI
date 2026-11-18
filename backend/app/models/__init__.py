@@ -37,6 +37,7 @@ from app.models.nammadeals import (
     BusinessStatus,
     Campaign,
     CampaignApprovalStatus,
+    CampaignStatus,
     CampaignType,
     CouponClaim,
     CouponClaimStatus,
@@ -47,6 +48,7 @@ from app.models.nammadeals import (
     PaymentVerificationStatus,
     PromotionEvent,
     PromotionEventType,
+    TargetingMode,
     TargetingStrategy,
 )
 
@@ -82,10 +84,12 @@ __all__ = [
     "BusinessStatus",
     "Campaign",
     "CampaignApprovalStatus",
+    "CampaignStatus",
     "CampaignType",
     "CouponClaim",
     "CouponClaimStatus",
     "TargetingStrategy",
+    "TargetingMode",
     "Offer",
     "OfferType",
     "DiscountType",

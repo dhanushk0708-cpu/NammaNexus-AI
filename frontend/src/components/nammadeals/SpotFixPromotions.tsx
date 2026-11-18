@@ -26,43 +26,40 @@ export default function SpotFixPromotions({
 }: SpotFixPromotionsProps) {
   const [promotions, setPromotions] = useState<PromotionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedPromo, setSelectedPromo] = useState<PromotionItem | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<PromotionOfferItem | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadDeals() {
-      try {
-        setLoading(true);
-        const res = await selectPromotions(
-          {
-            location_policy: "PREFER_COMPLAINT",
-            complaint_location: {
-              latitude: latitude || undefined,
-              longitude: longitude || undefined,
-              area: area || undefined,
-            },
-            limit: 3,
+  const loadDeals = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await selectPromotions(
+        {
+          location_policy: "PREFER_COMPLAINT",
+          complaint_location: {
+            latitude: latitude || undefined,
+            longitude: longitude || undefined,
+            area: area || undefined,
           },
-          citizenUserId
-        );
-        if (isMounted && res.promotions) {
-          setPromotions(res.promotions);
-        }
-      } catch (e) {
-        // Must fail silently so complaint submission confirmation is never affected
-        console.warn("NammaDeals promotion intake failed silently", e);
-      } finally {
-        if (isMounted) setLoading(false);
+          limit: 3,
+        },
+        citizenUserId
+      );
+      if (res && res.promotions) {
+        setPromotions(res.promotions);
       }
+    } catch (e: any) {
+      // Must fail safely so complaint submission confirmation is never affected
+      console.warn("NammaDeals promotion intake failed safely", e);
+      setError("Unable to load promotions at this time.");
+    } finally {
+      setLoading(false);
     }
+  };
 
+  useEffect(() => {
     loadDeals();
-
-    return () => {
-      isMounted = false;
-    };
   }, [latitude, longitude, area, citizenUserId]);
 
   if (loading) {
@@ -77,10 +74,7 @@ export default function SpotFixPromotions({
     );
   }
 
-  if (promotions.length === 0) {
-    return null;
-  }
-
+  // Guaranteed Post-Complaint Display: Never return null
   return (
     <div className="bg-gradient-to-br from-amber-50/60 via-white to-red-50/40 rounded-2xl border border-amber-200 shadow-xs p-6 space-y-4">
       {/* Header */}
@@ -111,20 +105,51 @@ export default function SpotFixPromotions({
         </Link>
       </div>
 
-      {/* Promotions Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {promotions.map((promo) => (
-          <PromotionCard
-            key={promo.campaign_id}
-            promotion={promo}
-            citizenUserId={citizenUserId}
-            onSelectOffer={(p, o) => {
-              setSelectedPromo(p);
-              setSelectedOffer(o);
-            }}
-          />
-        ))}
-      </div>
+      {/* Promotions Cards Grid or Empty State or Error */}
+      {error ? (
+        <div className="bg-white/70 border border-slate-200 rounded-xl p-5 text-center space-y-2">
+          <p className="text-xs text-slate-600">{error}</p>
+          <button
+            onClick={loadDeals}
+            className="text-xs font-bold text-[#C8102E] hover:underline"
+          >
+            Retry Loading Offers
+          </button>
+        </div>
+      ) : promotions.length === 0 ? (
+        <div className="bg-white/70 border border-amber-200/80 rounded-xl p-6 text-center space-y-2">
+          <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <h5 className="text-sm font-bold text-slate-900">New local offers are coming soon!</h5>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Local businesses in your area will be offering exclusive discounts and rewards to civic-minded citizens. Check back soon or browse active city-wide deals.
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/nammadeals"
+              className="inline-flex items-center gap-1 px-4 py-2 bg-[#C8102E] hover:bg-[#A60C24] text-white rounded-xl text-xs font-bold transition-colors"
+            >
+              <span>Explore NammaDeals</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {promotions.map((promo) => (
+            <PromotionCard
+              key={promo.campaign_id}
+              promotion={promo}
+              citizenUserId={citizenUserId}
+              onSelectOffer={(p, o) => {
+                setSelectedPromo(p);
+                setSelectedOffer(o);
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Offer Detail Modal */}
       {selectedPromo && selectedOffer && (
