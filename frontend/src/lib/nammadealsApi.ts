@@ -532,3 +532,226 @@ export async function verifyPayment(
   }
   return res.json();
 }
+
+// ============================================================================
+// Stage 4: Coupon Claims, Scratch Cards, In-Store Redemptions & Analytics
+// ============================================================================
+
+export interface CouponClaimRecord {
+  id: string;
+  citizen_user_id: string;
+  campaign_id: string;
+  offer_id: string;
+  unique_coupon_code: string;
+  status: "CLAIMED" | "REDEEMED" | "EXPIRED" | "CANCELLED";
+  claimed_at: string;
+  redeemed_at?: string | null;
+  redeemed_by_business_id?: string | null;
+  redemption_notes?: string | null;
+  scratch_reward_revealed: boolean;
+  claim_metadata?: any;
+  business_id?: string | null;
+  business_name?: string | null;
+  business_area?: string | null;
+  campaign_name?: string | null;
+  offer_title?: string | null;
+  offer_description?: string | null;
+  offer_type?: "COUPON" | "SCRATCH_CARD" | "INSTANT_DISCOUNT" | null;
+  discount_type?: "PERCENTAGE" | "FLAT" | "FREEBIE" | "REWARD" | null;
+  discount_value?: number | null;
+  terms_and_conditions?: string | null;
+  valid_until?: string | null;
+}
+
+export interface ScratchCardRevealResult {
+  success: boolean;
+  message: string;
+  claim: CouponClaimRecord;
+  reward_headline: string;
+  reward_description: string;
+  discount_percentage?: number | null;
+  revealed_at: string;
+  is_already_revealed: boolean;
+}
+
+export interface CouponRedemptionResult {
+  success: boolean;
+  message: string;
+  unique_coupon_code: string;
+  redeemed_at: string;
+  business_id: string;
+  business_name: string;
+  campaign_id: string;
+  campaign_name: string;
+  offer_id: string;
+  offer_title: string;
+  discount_summary: string;
+  redemption_notes?: string | null;
+  claim: CouponClaimRecord;
+}
+
+export interface CampaignAnalytics {
+  campaign_id: string;
+  campaign_name: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  claims: number;
+  redemptions: number;
+  ctr_percentage: number;
+  claim_rate_percentage: number;
+  redemption_rate_percentage: number;
+  budget_allocated?: number | null;
+}
+
+export interface BusinessAnalytics {
+  business_id: string;
+  business_name: string;
+  total_campaigns: number;
+  active_campaigns: number;
+  total_offers: number;
+  impressions: number;
+  clicks: number;
+  claims: number;
+  redemptions: number;
+  overall_ctr_percentage: number;
+  overall_redemption_rate_percentage: number;
+  verified_payments_total: number;
+}
+
+export interface AdminPlatformAnalytics {
+  total_registrations: number;
+  pending_registrations: number;
+  total_businesses: number;
+  verified_businesses: number;
+  total_campaigns: number;
+  active_campaigns: number;
+  pending_campaign_approvals: number;
+  total_impressions: number;
+  total_clicks: number;
+  total_claims: number;
+  total_redemptions: number;
+  overall_ctr_percentage: number;
+  total_revenue_inr: number;
+  pending_revenue_inr: number;
+}
+
+export async function claimCoupon(
+  offerId: string,
+  citizenUserId: string,
+  clientNotes?: string
+): Promise<CouponClaimRecord> {
+  const res = await fetch(`${API_BASE}/nammadeals/coupons/claim`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-ID": citizenUserId,
+    },
+    body: JSON.stringify({
+      offer_id: offerId,
+      client_notes: clientNotes,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to claim coupon" }));
+    throw new Error(err.detail || "Failed to claim coupon");
+  }
+  return res.json();
+}
+
+export async function getMyClaimedCoupons(
+  citizenUserId: string,
+  status?: string
+): Promise<CouponClaimRecord[]> {
+  const url = new URL(`${API_BASE}/nammadeals/coupons/my`);
+  if (status) url.searchParams.set("status", status);
+
+  const res = await fetch(url.toString(), {
+    headers: { "X-User-ID": citizenUserId },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to load claimed coupons");
+  }
+  return res.json();
+}
+
+export async function revealScratchCard(
+  offerId: string,
+  citizenUserId: string
+): Promise<ScratchCardRevealResult> {
+  const res = await fetch(`${API_BASE}/nammadeals/scratch-cards/${offerId}/reveal`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-ID": citizenUserId,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to reveal scratch card reward" }));
+    throw new Error(err.detail || "Failed to reveal scratch card reward");
+  }
+  return res.json();
+}
+
+export async function redeemCouponInStore(
+  businessId: string,
+  ownerUserId: string,
+  couponCode: string,
+  notes?: string
+): Promise<CouponRedemptionResult> {
+  const res = await fetch(`${API_BASE}/nammadeals/businesses/${businessId}/redeem`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-ID": ownerUserId,
+    },
+    body: JSON.stringify({
+      coupon_code: couponCode,
+      notes,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Redemption failed" }));
+    throw new Error(err.detail || "Redemption failed");
+  }
+  return res.json();
+}
+
+export async function getCampaignAnalytics(
+  campaignId: string,
+  ownerUserId: string
+): Promise<CampaignAnalytics> {
+  const res = await fetch(`${API_BASE}/nammadeals/campaigns/${campaignId}/analytics`, {
+    headers: { "X-User-ID": ownerUserId },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch campaign analytics");
+  }
+  return res.json();
+}
+
+export async function getBusinessAnalytics(
+  businessId: string,
+  ownerUserId: string
+): Promise<BusinessAnalytics> {
+  const res = await fetch(`${API_BASE}/nammadeals/businesses/${businessId}/analytics`, {
+    headers: { "X-User-ID": ownerUserId },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch business analytics");
+  }
+  return res.json();
+}
+
+export async function getAdminPlatformAnalytics(
+  adminToken: string
+): Promise<AdminPlatformAnalytics> {
+  const res = await fetch(`${API_BASE}/nammadeals/admin/analytics`, {
+    headers: { "X-Admin-Token": adminToken },
+  });
+  if (!res.ok) {
+    throw new Error("Failed to fetch platform analytics");
+  }
+  return res.json();
+}
+

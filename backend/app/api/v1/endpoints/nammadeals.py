@@ -6,20 +6,28 @@ from app.api.v1.endpoints.nammadeals_deps import get_current_admin, get_current_
 from app.db.dependencies import get_db
 from app.models.nammadeals import Business
 from app.schemas.nammadeals import (
+    AdminPlatformAnalyticsRead,
     AdvertiserPaymentCreate,
     AdvertiserPaymentRead,
     AdvertiserPaymentVerifyRequest,
+    BusinessAnalyticsRead,
     BusinessRead,
     BusinessRegistrationCreate,
     BusinessRegistrationRead,
     BusinessRegistrationReviewRequest,
     BusinessStatusUpdateRequest,
     BusinessUpdate,
+    CampaignAnalyticsRead,
     CampaignCreate,
     CampaignRead,
     CampaignReviewRequest,
     CampaignToggleActiveRequest,
     CampaignUpdate,
+    CouponClaimCreate,
+    CouponClaimRead,
+    CouponClaimStatus,
+    CouponRedemptionRead,
+    CouponRedemptionRequest,
     OfferCreate,
     OfferRead,
     OfferUpdate,
@@ -29,9 +37,13 @@ from app.schemas.nammadeals import (
     PromotionOfferItem,
     PromotionSelectionRequest,
     PromotionSelectionResponse,
+    ScratchCardRevealRead,
+    ScratchCardRevealRequest,
 )
+from app.services.nammadeals import analytics as analytics_service
 from app.services.nammadeals import business as business_service
 from app.services.nammadeals import campaign as campaign_service
+from app.services.nammadeals import claims as claims_service
 from app.services.nammadeals import events as events_service
 from app.services.nammadeals import payment as payment_service
 from app.services.nammadeals import selection as selection_service
@@ -548,4 +560,146 @@ def record_promotion_event(
         return events_service.record_promotion_event(db, data, citizen_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ============================================================================
+# 7. Citizen Coupon Claiming & Scratch-Cards
+# ============================================================================
+
+@router.post(
+    "/coupons/claim",
+    response_model=CouponClaimRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Citizen: Claim an offer coupon",
+)
+def claim_coupon(
+    data: CouponClaimCreate,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Claims an offer for the authenticated citizen, generating a unique personalized coupon code."""
+    try:
+        return claims_service.claim_coupon(db, data.offer_id, user_id, data.client_notes)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get(
+    "/coupons/my",
+    response_model=list[CouponClaimRead],
+    summary="Citizen: List my claimed coupons and scratch-card rewards",
+)
+def list_my_coupons(
+    status_filter: Annotated[CouponClaimStatus | None, Query(alias="status")] = None,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Retrieves all coupons claimed by the authenticated citizen."""
+    try:
+        return claims_service.list_my_claimed_coupons(db, user_id, status_filter)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/scratch-cards/{offer_id}/reveal",
+    response_model=ScratchCardRevealRead,
+    summary="Citizen: Reveal a predetermined scratch-card reward",
+)
+def reveal_scratch_card(
+    offer_id: str,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Authorizes and reveals a predetermined scratch-card reward configured by the business.
+
+    Subsequent calls return the exact same persisted reward.
+    """
+    try:
+        return claims_service.reveal_scratch_card(db, offer_id, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ============================================================================
+# 8. In-Store Coupon Redemption
+# ============================================================================
+
+@router.post(
+    "/businesses/{business_id}/redeem",
+    response_model=CouponRedemptionRead,
+    summary="Merchant: Verify and redeem a citizen's coupon code in-store",
+)
+def redeem_coupon(
+    business_id: str,
+    data: CouponRedemptionRequest,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Verifies a citizen's unique coupon code in-store, locks row to prevent double-redemptions,
+
+    updates redemption counts and logs a verified redemption event.
+    """
+    try:
+        return claims_service.redeem_coupon(db, business_id, user_id, data.coupon_code, data.notes)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ============================================================================
+# 9. Performance & Platform Analytics
+# ============================================================================
+
+@router.get(
+    "/campaigns/{campaign_id}/analytics",
+    response_model=CampaignAnalyticsRead,
+    summary="Business Owner: Get conversion analytics for a campaign",
+)
+def get_campaign_analytics(
+    campaign_id: str,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns impressions, clicks, claims, redemptions, CTR, and conversion rates."""
+    try:
+        return analytics_service.get_campaign_analytics(db, campaign_id, user_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get(
+    "/businesses/{business_id}/analytics",
+    response_model=BusinessAnalyticsRead,
+    summary="Business Owner: Get aggregate analytics for a business",
+)
+def get_business_analytics(
+    business_id: str,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Returns business-wide campaign performance and monetization metrics."""
+    try:
+        return analytics_service.get_business_analytics(db, business_id, user_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.get(
+    "/admin/analytics",
+    response_model=AdminPlatformAnalyticsRead,
+    summary="Admin: Get platform-wide operational and revenue intelligence",
+)
+def get_admin_analytics(
+    _admin: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Returns system-wide counts, campaign metrics, platform CTR, and revenue totals."""
+    return analytics_service.get_admin_analytics(db)
+
 

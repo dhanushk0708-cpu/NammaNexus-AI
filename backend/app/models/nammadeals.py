@@ -3,10 +3,17 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+class CouponClaimStatus(str, Enum):
+    CLAIMED = "CLAIMED"
+    REDEEMED = "REDEEMED"
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
 
 
 class BusinessRegistrationStatus(str, Enum):
@@ -501,4 +508,84 @@ class PromotionEvent(Base):
 
     campaign: Mapped[Campaign] = relationship("Campaign")
     offer: Mapped[Offer | None] = relationship("Offer")
+
+
+class CouponClaim(Base):
+    """Backend-authoritative record of a citizen's claimed coupon or revealed scratch-card."""
+
+    __tablename__ = "nammadeals_coupon_claims"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    citizen_user_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("nammadeals_campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    offer_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("nammadeals_offers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    unique_coupon_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default=CouponClaimStatus.CLAIMED.value,
+        server_default=CouponClaimStatus.CLAIMED.value,
+        index=True,
+        nullable=False,
+    )
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    redeemed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    redeemed_by_business_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("nammadeals_businesses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    redemption_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    scratch_reward_revealed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+    claim_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("citizen_user_id", "offer_id", name="uq_nammadeals_citizen_offer_claim"),
+    )
+
+    campaign: Mapped[Campaign] = relationship("Campaign")
+    offer: Mapped[Offer] = relationship("Offer")
+    business: Mapped[Business | None] = relationship("Business", foreign_keys=[redeemed_by_business_id])
+
 

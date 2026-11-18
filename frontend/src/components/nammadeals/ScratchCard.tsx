@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect } from "react";
 import { Sparkles, Gift, Check, Copy, ArrowRight, ShieldCheck } from "lucide-react";
-import { PromotionItem, PromotionOfferItem, saveClaimedCoupon } from "@/lib/nammadealsApi";
+import { PromotionItem, PromotionOfferItem, saveClaimedCoupon, revealScratchCard } from "@/lib/nammadealsApi";
 
 interface ScratchCardProps {
   promotion: PromotionItem;
@@ -76,34 +76,67 @@ export default function ScratchCard({ promotion, offer, onClaimed }: ScratchCard
     }
   };
 
-  const revealReward = () => {
+  const [revealedCode, setRevealedCode] = useState<string>(offer.coupon_code || "REWARD50");
+  const [revealedHeadline, setRevealedHeadline] = useState<string>(
+    offer.scratch_card_config?.win_headline || offer.title
+  );
+
+  const revealReward = async () => {
     setIsRevealed(true);
-    if (offer.coupon_code) {
+    try {
+      const citizenId = "citizen_current_user";
+      const serverReveal = await revealScratchCard(offer.id, citizenId);
+      const uniqueCode = serverReveal.claim.unique_coupon_code;
+      setRevealedCode(uniqueCode);
+      if (serverReveal.reward_headline) {
+        setRevealedHeadline(serverReveal.reward_headline);
+      }
+
       saveClaimedCoupon({
-        id: `${offer.id}_scratch_${Date.now()}`,
+        id: serverReveal.claim.id,
         campaign_id: promotion.campaign_id,
         campaign_name: promotion.campaign_name,
         business_name: promotion.business_name,
         business_area: promotion.business_area,
-        offer_title: offer.title,
-        coupon_code: offer.coupon_code,
+        offer_title: serverReveal.reward_headline || offer.title,
+        coupon_code: uniqueCode,
         discount_label:
-          offer.discount_type === "PERCENTAGE"
-            ? `${offer.discount_value}% OFF`
-            : offer.discount_type === "FLAT"
-            ? `₹${offer.discount_value} OFF`
+          serverReveal.discount_percentage != null
+            ? `${serverReveal.discount_percentage}% OFF`
             : "SECRET REWARD",
         valid_until: offer.valid_until,
         claimed_at: new Date().toISOString(),
         is_used: false,
       });
       if (onClaimed) onClaimed();
+    } catch {
+      // Fallback if network offline
+      if (offer.coupon_code) {
+        saveClaimedCoupon({
+          id: `${offer.id}_scratch_${Date.now()}`,
+          campaign_id: promotion.campaign_id,
+          campaign_name: promotion.campaign_name,
+          business_name: promotion.business_name,
+          business_area: promotion.business_area,
+          offer_title: offer.title,
+          coupon_code: offer.coupon_code,
+          discount_label:
+            offer.discount_type === "PERCENTAGE"
+              ? `${offer.discount_value}% OFF`
+              : "SECRET REWARD",
+          valid_until: offer.valid_until,
+          claimed_at: new Date().toISOString(),
+          is_used: false,
+        });
+        if (onClaimed) onClaimed();
+      }
     }
   };
 
   const handleCopy = () => {
-    if (offer.coupon_code) {
-      navigator.clipboard.writeText(offer.coupon_code);
+    const codeToCopy = revealedCode || offer.coupon_code;
+    if (codeToCopy) {
+      navigator.clipboard.writeText(codeToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -125,10 +158,10 @@ export default function ScratchCard({ promotion, offer, onClaimed }: ScratchCard
         {/* Underlying Predetermined Backend Reward */}
         <div className="p-4 space-y-2 text-center w-full">
           <div className="text-xs font-bold text-amber-700 bg-amber-100/90 py-0.5 px-2 rounded-md inline-block">
-            {offer.scratch_card_config?.win_headline || offer.title}
+            {revealedHeadline}
           </div>
           <div className="font-mono text-2xl font-black text-[#C8102E] tracking-widest">
-            {offer.coupon_code || "REWARD50"}
+            {revealedCode}
           </div>
           <p className="text-[11px] text-slate-600 font-medium">
             Valid till {new Date(offer.valid_until).toLocaleDateString()}

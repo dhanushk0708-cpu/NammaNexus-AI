@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { X, Copy, Check, Sparkles, MapPin, Calendar, Tag, ShieldCheck } from "lucide-react";
-import { PromotionItem, PromotionOfferItem, saveClaimedCoupon } from "@/lib/nammadealsApi";
+import { PromotionItem, PromotionOfferItem, saveClaimedCoupon, claimCoupon } from "@/lib/nammadealsApi";
 
 interface OfferDetailModalProps {
   promotion: PromotionItem | null;
@@ -30,28 +30,52 @@ export default function OfferDetailModal({
     }
   };
 
-  const handleClaim = () => {
-    if (!offer.coupon_code) return;
-    saveClaimedCoupon({
-      id: `${offer.id}_${Date.now()}`,
-      campaign_id: promotion.campaign_id,
-      campaign_name: promotion.campaign_name,
-      business_name: promotion.business_name,
-      business_area: promotion.business_area,
-      offer_title: offer.title,
-      coupon_code: offer.coupon_code,
-      discount_label:
-        offer.discount_type === "PERCENTAGE"
-          ? `${offer.discount_value}% OFF`
-          : offer.discount_type === "FLAT"
-          ? `₹${offer.discount_value} OFF`
-          : "SPECIAL DEAL",
-      valid_until: offer.valid_until,
-      claimed_at: new Date().toISOString(),
-      is_used: false,
-    });
-    setClaimed(true);
-    if (onClaimed) onClaimed();
+  const handleClaim = async () => {
+    try {
+      const citizenId = "citizen_current_user";
+      const serverClaim = await claimCoupon(offer.id, citizenId).catch(() => null);
+      const uniqueCode = serverClaim?.unique_coupon_code || offer.coupon_code || "REWARD";
+
+      saveClaimedCoupon({
+        id: serverClaim?.id || `${offer.id}_${Date.now()}`,
+        campaign_id: promotion.campaign_id,
+        campaign_name: promotion.campaign_name,
+        business_name: promotion.business_name,
+        business_area: promotion.business_area,
+        offer_title: offer.title,
+        coupon_code: uniqueCode,
+        discount_label:
+          offer.discount_type === "PERCENTAGE"
+            ? `${offer.discount_value}% OFF`
+            : offer.discount_type === "FLAT"
+            ? `₹${offer.discount_value} OFF`
+            : "SPECIAL DEAL",
+        valid_until: offer.valid_until,
+        claimed_at: new Date().toISOString(),
+        is_used: false,
+      });
+      setClaimed(true);
+      if (onClaimed) onClaimed();
+    } catch {
+      // Fallback to local save if offline
+      if (offer.coupon_code) {
+        saveClaimedCoupon({
+          id: `${offer.id}_${Date.now()}`,
+          campaign_id: promotion.campaign_id,
+          campaign_name: promotion.campaign_name,
+          business_name: promotion.business_name,
+          business_area: promotion.business_area,
+          offer_title: offer.title,
+          coupon_code: offer.coupon_code,
+          discount_label: `${offer.discount_value}% OFF`,
+          valid_until: offer.valid_until,
+          claimed_at: new Date().toISOString(),
+          is_used: false,
+        });
+        setClaimed(true);
+        if (onClaimed) onClaimed();
+      }
+    }
   };
 
   return (

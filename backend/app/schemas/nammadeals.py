@@ -15,6 +15,7 @@ from app.models.nammadeals import (
     PaymentVerificationStatus,
     PromotionEventType,
     TargetingStrategy,
+    CouponClaimStatus,
 )
 
 
@@ -361,6 +362,7 @@ class CitizenProfileLocation(BaseModel):
 
 
 class SpotFixComplaintLocation(BaseModel):
+    complaint_id: str | None = Field(None, max_length=36, description="Optional SpotFix complaint ID for server-side verification")
     latitude: float | None = Field(None, ge=-90.0, le=90.0)
     longitude: float | None = Field(None, ge=-180.0, le=180.0)
     area: str | None = Field(None, max_length=100)
@@ -431,4 +433,128 @@ class PromotionEventRead(BaseModel):
     location_source: str | None = None
     idempotency_key: str | None = None
     created_at: datetime
+
+
+# --- Coupon Claim & Scratch Card Schemas ---
+
+class CouponClaimCreate(BaseModel):
+    offer_id: str = Field(..., min_length=1, max_length=36)
+    client_notes: str | None = Field(None, max_length=500)
+
+
+class CouponClaimRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    citizen_user_id: str
+    campaign_id: str
+    offer_id: str
+    unique_coupon_code: str
+    status: CouponClaimStatus
+    claimed_at: datetime
+    redeemed_at: datetime | None = None
+    redeemed_by_business_id: str | None = None
+    redemption_notes: str | None = None
+    scratch_reward_revealed: bool = False
+    claim_metadata: dict[str, Any] | None = None
+
+    # Enriched fields for UI convenience (tenant-privacy preserved: no citizen PII to business)
+    business_id: str | None = None
+    business_name: str | None = None
+    business_area: str | None = None
+    campaign_name: str | None = None
+    offer_title: str | None = None
+    offer_description: str | None = None
+    offer_type: OfferType | None = None
+    discount_type: DiscountType | None = None
+    discount_value: float | None = None
+    terms_and_conditions: str | None = None
+    valid_until: datetime | None = None
+
+
+class ScratchCardRevealRequest(BaseModel):
+    notes: str | None = Field(None, max_length=200)
+
+
+class ScratchCardRevealRead(BaseModel):
+    success: bool = True
+    message: str
+    claim: CouponClaimRead
+    reward_headline: str
+    reward_description: str
+    discount_percentage: float | None = None
+    revealed_at: datetime
+    is_already_revealed: bool = False
+
+
+# --- Coupon Redemption Schemas ---
+
+class CouponRedemptionRequest(BaseModel):
+    coupon_code: str = Field(..., min_length=4, max_length=64)
+    notes: str | None = Field(None, max_length=500)
+
+
+class CouponRedemptionRead(BaseModel):
+    success: bool = True
+    message: str
+    unique_coupon_code: str
+    redeemed_at: datetime
+    business_id: str
+    business_name: str
+    campaign_id: str
+    campaign_name: str
+    offer_id: str
+    offer_title: str
+    discount_summary: str
+    redemption_notes: str | None = None
+    claim: CouponClaimRead
+
+
+# --- Analytics & Reporting Schemas ---
+
+class CampaignAnalyticsRead(BaseModel):
+    campaign_id: str
+    campaign_name: str
+    status: str
+    impressions: int
+    clicks: int
+    claims: int
+    redemptions: int
+    ctr_percentage: float
+    claim_rate_percentage: float
+    redemption_rate_percentage: float
+    budget_allocated: float | None = None
+
+
+class BusinessAnalyticsRead(BaseModel):
+    business_id: str
+    business_name: str
+    total_campaigns: int
+    active_campaigns: int
+    total_offers: int
+    impressions: int
+    clicks: int
+    claims: int
+    redemptions: int
+    overall_ctr_percentage: float
+    overall_redemption_rate_percentage: float
+    verified_payments_total: float
+
+
+class AdminPlatformAnalyticsRead(BaseModel):
+    total_registrations: int
+    pending_registrations: int
+    total_businesses: int
+    verified_businesses: int
+    total_campaigns: int
+    active_campaigns: int
+    pending_campaign_approvals: int
+    total_impressions: int
+    total_clicks: int
+    total_claims: int
+    total_redemptions: int
+    overall_ctr_percentage: float
+    total_revenue_inr: float
+    pending_revenue_inr: float
+
 

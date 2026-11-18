@@ -99,6 +99,16 @@ def select_promotions(
     profile_loc = request.profile_location
     policy = request.location_policy
 
+    # Server-side verification for SpotFix complaint coordinate security
+    if complaint_loc and complaint_loc.complaint_id:
+        from app.models.complaint import Complaint
+        db_complaint = db.query(Complaint).filter(Complaint.id == complaint_loc.complaint_id).first()
+        if db_complaint:
+            # Overwrite with server-authoritative coordinates if available in database
+            if db_complaint.latitude is not None and db_complaint.longitude is not None:
+                complaint_loc.latitude = db_complaint.latitude
+                complaint_loc.longitude = db_complaint.longitude
+
     has_complaint = (
         complaint_loc is not None
         and (complaint_loc.latitude is not None or complaint_loc.area is not None)

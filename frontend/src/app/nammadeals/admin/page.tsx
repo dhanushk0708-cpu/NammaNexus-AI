@@ -29,6 +29,8 @@ import {
   updateBusinessStatus,
   getAdminPayments,
   verifyPayment,
+  getAdminPlatformAnalytics,
+  AdminPlatformAnalytics,
 } from "@/lib/nammadealsApi";
 
 export default function AdminDashboardPage() {
@@ -38,6 +40,7 @@ export default function AdminDashboardPage() {
   const [registrations, setRegistrations] = useState<BusinessRegistrationRecord[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
   const [payments, setPayments] = useState<AdvertiserPaymentRecord[]>([]);
+  const [platformAnalytics, setPlatformAnalytics] = useState<AdminPlatformAnalytics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,14 +52,16 @@ export default function AdminDashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const [regs, camps, pays] = await Promise.all([
+      const [regs, camps, pays, stats] = await Promise.all([
         getAdminRegistrations(adminToken).catch(() => []),
         getAdminCampaigns(adminToken).catch(() => []),
         getAdminPayments(adminToken).catch(() => []),
+        getAdminPlatformAnalytics(adminToken).catch(() => null),
       ]);
       setRegistrations(regs);
       setCampaigns(camps);
       setPayments(pays);
+      setPlatformAnalytics(stats);
     } catch (e: any) {
       setError(e.message || "Failed to load admin data");
     } finally {
@@ -461,28 +466,73 @@ export default function AdminDashboardPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs">
               <span className="text-xs font-semibold text-slate-500">Registered Businesses</span>
-              <div className="text-3xl font-black text-slate-900 mt-1">{registrations.length}</div>
+              <div className="text-3xl font-black text-slate-900 mt-1">
+                {platformAnalytics ? platformAnalytics.total_businesses : registrations.length}
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs">
               <span className="text-xs font-semibold text-slate-500">Active Campaigns</span>
               <div className="text-3xl font-black text-emerald-600 mt-1">
-                {campaigns.filter((c) => c.is_active).length}
+                {platformAnalytics ? platformAnalytics.active_campaigns : campaigns.filter((c) => c.is_active).length}
               </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs">
               <span className="text-xs font-semibold text-slate-500">Total Campaigns</span>
-              <div className="text-3xl font-black text-slate-900 mt-1">{campaigns.length}</div>
+              <div className="text-3xl font-black text-slate-900 mt-1">
+                {platformAnalytics ? platformAnalytics.total_campaigns : campaigns.length}
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs">
-              <span className="text-xs font-semibold text-slate-500">Platform Ad Revenue</span>
+              <span className="text-xs font-semibold text-slate-500">Verified Platform Revenue</span>
               <div className="text-3xl font-black text-[#C8102E] mt-1">
-                ₹{verifiedPaymentsTotal.toLocaleString()}
+                ₹{(platformAnalytics ? platformAnalytics.total_revenue_inr : verifiedPaymentsTotal).toLocaleString()}
               </div>
             </div>
           </div>
+
+          {/* Full Platform Conversion Funnel */}
+          {platformAnalytics && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                    <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Cross-Platform Conversion Aggregates</span>
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900">Total Event Engagement Funnel</h3>
+                </div>
+                <div className="text-xs font-bold text-slate-500">
+                  Pending Revenue: <span className="text-amber-600">₹{platformAnalytics.pending_revenue_inr.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Impressions</span>
+                  <div className="text-2xl font-black text-slate-900 mt-1">{platformAnalytics.total_impressions}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Clicks</span>
+                  <div className="text-2xl font-black text-slate-900 mt-1">{platformAnalytics.total_clicks}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Claims</span>
+                  <div className="text-2xl font-black text-amber-600 mt-1">{platformAnalytics.total_claims}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Redemptions</span>
+                  <div className="text-2xl font-black text-emerald-600 mt-1">{platformAnalytics.total_redemptions}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Overall CTR</span>
+                  <div className="text-2xl font-black text-indigo-600 mt-1">{platformAnalytics.overall_ctr_percentage}%</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-2">
             <h4 className="text-sm font-bold text-slate-900">Geospatial Distribution</h4>

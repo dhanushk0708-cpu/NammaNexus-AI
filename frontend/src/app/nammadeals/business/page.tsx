@@ -31,6 +31,10 @@ import {
   submitCampaignForApproval,
   toggleCampaignActive,
   recordAdvertiserPayment,
+  redeemCouponInStore,
+  getBusinessAnalytics,
+  BusinessAnalytics,
+  CouponRedemptionResult,
 } from "@/lib/nammadealsApi";
 
 export default function BusinessDashboardPage() {
@@ -80,6 +84,16 @@ export default function BusinessDashboardPage() {
     payment_method: "UPI" as const,
   });
 
+  // Analytics State
+  const [analytics, setAnalytics] = useState<BusinessAnalytics | null>(null);
+
+  // In-Store Redemption State
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeemNotes, setRedeemNotes] = useState("");
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [redeemResult, setRedeemResult] = useState<CouponRedemptionResult | null>(null);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -87,17 +101,49 @@ export default function BusinessDashboardPage() {
       const bizList = await getMyBusinesses(userId);
       setBusinesses(bizList);
       if (bizList.length > 0) {
-        setSelectedBusiness(bizList[0]);
-        const campList = await getBusinessCampaigns(bizList[0].id, userId);
+        const activeBiz = bizList[0];
+        setSelectedBusiness(activeBiz);
+        const [campList, bizAnalytics] = await Promise.all([
+          getBusinessCampaigns(activeBiz.id, userId),
+          getBusinessAnalytics(activeBiz.id, userId).catch(() => null),
+        ]);
         setCampaigns(campList);
+        setAnalytics(bizAnalytics);
       } else {
         setSelectedBusiness(null);
         setCampaigns([]);
+        setAnalytics(null);
       }
     } catch (e: any) {
       setError(e.message || "Failed to load business profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRedeemCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBusiness || !redeemCode.trim()) return;
+    try {
+      setRedeemLoading(true);
+      setRedeemError(null);
+      setRedeemResult(null);
+      const res = await redeemCouponInStore(
+        selectedBusiness.id,
+        userId,
+        redeemCode.trim(),
+        redeemNotes.trim() || undefined
+      );
+      setRedeemResult(res);
+      setRedeemCode("");
+      setRedeemNotes("");
+      // Refresh analytics & campaigns
+      const updatedAnalytics = await getBusinessAnalytics(selectedBusiness.id, userId).catch(() => null);
+      if (updatedAnalytics) setAnalytics(updatedAnalytics);
+    } catch (err: any) {
+      setRedeemError(err.message || "Redemption failed");
+    } finally {
+      setRedeemLoading(false);
     }
   };
 
@@ -484,6 +530,149 @@ export default function BusinessDashboardPage() {
               </div>
             </div>
           </div>
+
+          {/* IN-STORE CITIZEN COUPON REDEMPTION BOX */}
+          <div className="bg-white border-2 border-dashed border-red-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#C8102E] bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Merchant POS / Cashier Desk</span>
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900">Verify & Redeem Citizen Coupon</h3>
+                <p className="text-xs text-slate-500">
+                  Verify a citizen&apos;s unique coupon code in real-time. Prevents duplicate claims and records audit trail.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleRedeemCoupon} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Citizen Unique Coupon Code</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. FILTER20-AB12CD34"
+                    value={redeemCode}
+                    onChange={(e) => setRedeemCode(e.target.value.toUpperCase())}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm font-bold text-slate-900 tracking-wider uppercase focus:ring-2 focus:ring-red-400 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Audit Note / Bill Ref</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bill #4092"
+                    value={redeemNotes}
+                    onChange={(e) => setRedeemNotes(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-400">
+                  Redemption immediately locks the coupon code across all platform nodes.
+                </span>
+                <button
+                  type="submit"
+                  disabled={redeemLoading || !redeemCode.trim()}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-xs transition-all flex items-center gap-1.5 ${
+                    redeemLoading || !redeemCode.trim()
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-[#C8102E] hover:bg-[#A60C24] text-white"
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{redeemLoading ? "Verifying..." : "Verify & Redeem"}</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Redemption Success Feedback */}
+            {redeemResult && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 space-y-2 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{redeemResult.message}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs text-slate-700">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Code</span>
+                    <span className="font-mono font-bold text-slate-900">{redeemResult.unique_coupon_code}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Offer</span>
+                    <span className="font-semibold text-slate-900">{redeemResult.offer_title}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Discount</span>
+                    <span className="font-extrabold text-[#C8102E]">{redeemResult.discount_summary}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Timestamp</span>
+                    <span className="font-medium text-slate-600">
+                      {new Date(redeemResult.redeemed_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Redemption Failure Feedback */}
+            {redeemError && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-center gap-3 text-red-800 text-xs font-semibold animate-in fade-in duration-200">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+                <span>Verification Failed: {redeemError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* FULL-LIFECYCLE CAMPAIGN PERFORMANCE ANALYTICS */}
+          {analytics && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="space-y-0.5">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                    <BarChart3 className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Real-Time Campaign Performance</span>
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900">Conversion Funnel & Analytics</h3>
+                </div>
+                <div className="text-xs font-bold text-slate-500">
+                  Verified Ad Spend: <span className="text-[#C8102E]">₹{analytics.verified_payments_total.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Impressions</span>
+                  <div className="text-xl font-black text-slate-900 mt-1">{analytics.impressions}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Clicks</span>
+                  <div className="text-xl font-black text-slate-900 mt-1">{analytics.clicks}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Claims</span>
+                  <div className="text-xl font-black text-amber-600 mt-1">{analytics.claims}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Redemptions</span>
+                  <div className="text-xl font-black text-emerald-600 mt-1">{analytics.redemptions}</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">CTR</span>
+                  <div className="text-xl font-black text-indigo-600 mt-1">{analytics.overall_ctr_percentage}%</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold block">Conversion</span>
+                  <div className="text-xl font-black text-[#C8102E] mt-1">{analytics.overall_redemption_rate_percentage}%</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* CREATE CAMPAIGN MODAL */}
           {showCreateCampaign && (
