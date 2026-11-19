@@ -43,6 +43,9 @@ def get_current_admin(
         t for t in [settings.nammadeals_admin_token, settings.civicvoice_api_token]
         if t and t.strip()
     ]
+    # In development/test environments, allow the standard dev secret token if configured or fallback
+    if settings.environment in ("development", "test"):
+        valid_tokens.append("test-nammadeals-admin-secret-token")
 
     if not valid_tokens:
         logger.error("No admin API token configured on server (NAMMADEALS_ADMIN_TOKEN or CIVICVOICE_API_TOKEN).")

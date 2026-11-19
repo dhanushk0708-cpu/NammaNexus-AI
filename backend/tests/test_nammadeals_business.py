@@ -346,3 +346,36 @@ def test_business_registration_google_maps_url_and_coordinate_extraction(test_cl
     assert res_bad.status_code == 400
     assert "Invalid Google Maps link" in res_bad.json()["detail"]
 
+
+def test_admin_list_businesses_and_auto_healing(test_client_and_db):
+    """Test GET /api/v1/nammadeals/admin/businesses retrieves approved businesses and auto-heals orphan approved registrations."""
+    client, session = test_client_and_db
+
+    # Create an approved registration that somehow lacks a Business record (historical edge case)
+    reg = BusinessRegistration(
+        business_name="Cloth Expert",
+        category="Retail",
+        contact_name="Ramesh",
+        email="ramesh@clothexpert.in",
+        phone="9876543290",
+        address="Commercial Street",
+        city="Bengaluru",
+        area="Shivajinagar",
+        pincode="560001",
+        status=BusinessRegistrationStatus.APPROVED.value,
+    )
+    session.add(reg)
+    session.commit()
+
+    headers = {"X-Admin-Token": ADMIN_TOKEN}
+    res = client.get("/api/v1/nammadeals/admin/businesses?status=APPROVED", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) >= 1
+    cloth_biz = next((b for b in data if b["name"] == "Cloth Expert"), None)
+    assert cloth_biz is not None
+    assert cloth_biz["status"] == "APPROVED"
+    assert cloth_biz["registration_id"] == reg.id
+    assert cloth_biz["area"] == "Shivajinagar"
+
+

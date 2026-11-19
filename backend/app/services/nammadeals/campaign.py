@@ -118,7 +118,20 @@ def admin_create_campaign(
     Creates an advertisement campaign directly for an approved business,
     including the offer, banner image, targeting mode, and schedule.
     """
-    business = db.query(Business).filter(Business.id == data.business_id).first()
+    business = (
+        db.query(Business)
+        .filter((Business.id == data.business_id) | (Business.registration_id == data.business_id))
+        .first()
+    )
+    if not business:
+        from app.services.nammadeals import business as business_svc
+        business_svc.ensure_business_for_approved_registrations(db)
+        business = (
+            db.query(Business)
+            .filter((Business.id == data.business_id) | (Business.registration_id == data.business_id))
+            .first()
+        )
+
     if not business:
         raise ValueError(f"Business '{data.business_id}' not found.")
     if business.status != BusinessStatus.APPROVED.value:

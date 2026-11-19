@@ -156,6 +156,23 @@ def admin_review_registration(
 # ============================================================================
 
 @router.get(
+    "/admin/businesses",
+    response_model=list[BusinessRead],
+    summary="Admin: List all businesses (e.g. APPROVED for campaigns)",
+)
+def admin_list_businesses(
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+    _admin: str = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin endpoint to retrieve registered businesses, optionally filtered by status (e.g., APPROVED)."""
+    businesses = business_service.admin_list_businesses(db, status=status_filter, skip=skip, limit=limit)
+    return [business_service.build_business_read(b) for b in businesses]
+
+
+@router.get(
     "/businesses/me",
     response_model=list[BusinessRead],
     summary="List businesses owned by current authenticated user",

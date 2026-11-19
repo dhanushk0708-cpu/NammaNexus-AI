@@ -235,6 +235,68 @@ def get_business_by_id(db: Session, business_id: str) -> Business | None:
     return db.query(Business).filter(Business.id == business_id).first()
 
 
+def ensure_business_for_approved_registrations(db: Session) -> int:
+    """Safely backfills/heals any historical APPROVED registration missing a Business record.
+
+    Prevents duplicates by checking existing registration_id links.
+    """
+    approved_regs = (
+        db.query(BusinessRegistration)
+        .filter(BusinessRegistration.status == BusinessRegistrationStatus.APPROVED.value)
+        .all()
+    )
+    created_count = 0
+    now = datetime.now(timezone.utc)
+    for reg in approved_regs:
+        existing_biz = db.query(Business).filter(Business.registration_id == reg.id).first()
+        if not existing_biz:
+            owner_id = f"usr_{reg.contact_name.lower().replace(' ', '_')}_{reg.id[:6]}"
+            new_biz = Business(
+                owner_user_id=owner_id,
+                registration_id=reg.id,
+                name=reg.business_name,
+                description=reg.description,
+                category=reg.category,
+                email=reg.email,
+                phone=reg.phone,
+                address=reg.address,
+                city=reg.city or "Bengaluru",
+                area=reg.area,
+                pincode=reg.pincode,
+                google_maps_url=reg.google_maps_url,
+                logo_url=reg.logo_url,
+                latitude=reg.latitude,
+                longitude=reg.longitude,
+                status=BusinessStatus.APPROVED.value,
+                verified_at=reg.reviewed_at or now,
+                verified_by=reg.reviewed_by or "admin",
+            )
+            db.add(new_biz)
+            created_count += 1
+
+    if created_count > 0:
+        db.commit()
+        logger.info("Healed %d approved registrations with missing Business records.", created_count)
+    return created_count
+
+
+def admin_list_businesses(
+    db: Session,
+    status: str | None = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> list[Business]:
+    """Admin lists businesses with optional status filtering.
+
+    First ensures any approved registration without a business record is safely healed.
+    """
+    ensure_business_for_approved_registrations(db)
+    query = db.query(Business)
+    if status:
+        query = query.filter(Business.status == status)
+    return query.order_by(Business.created_at.desc()).offset(skip).limit(limit).all()
+
+
 def get_businesses_by_owner(db: Session, owner_user_id: str) -> list[Business]:
     """Fetch all businesses owned by a specific user."""
     return (

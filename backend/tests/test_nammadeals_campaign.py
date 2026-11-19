@@ -6,6 +6,8 @@ from PIL import Image
 from app.core.config import settings
 from app.models.nammadeals import (
     Business,
+    BusinessRegistration,
+    BusinessRegistrationStatus,
     BusinessStatus,
     Campaign,
     CampaignApprovalStatus,
@@ -310,3 +312,58 @@ def test_campaign_offer_creation_and_validation(test_client_and_db, approved_bus
     res_scratch = client.post(f"/api/v1/nammadeals/campaigns/{camp_id}/offers", json=scratch_card, headers=headers)
     assert res_scratch.status_code == 201
     assert res_scratch.json()["offer_type"] == "SCRATCH_CARD"
+
+
+def test_admin_create_campaign_resolves_via_registration_id(test_client_and_db):
+    """Test creating campaign by passing registration_id instead of business_id gracefully resolves to Business."""
+    client, session = test_client_and_db
+    reg = BusinessRegistration(
+        business_name="Test Silk Hub",
+        category="Fashion",
+        contact_name="Vinay",
+        email="vinay@silkhub.in",
+        phone="9876543291",
+        address="Commercial Street",
+        city="Bengaluru",
+        area="Commercial Street",
+        pincode="560001",
+        status=BusinessRegistrationStatus.APPROVED.value,
+    )
+    session.add(reg)
+    session.commit()
+
+    # Create corresponding business
+    biz = Business(
+        owner_user_id="usr_vinay",
+        registration_id=reg.id,
+        name="Test Silk Hub",
+        category="Fashion",
+        email="vinay@silkhub.in",
+        phone="9876543291",
+        address="Commercial Street",
+        city="Bengaluru",
+        area="Commercial Street",
+        pincode="560001",
+        status=BusinessStatus.APPROVED.value,
+    )
+    session.add(biz)
+    session.commit()
+
+    headers = {"X-Admin-Token": ADMIN_TOKEN}
+    now = datetime.now(timezone.utc)
+    # Pass reg.id as business_id in payload
+    payload = {
+        "business_id": reg.id,
+        "name": "Silk Sarees Festive Sale",
+        "offer_title": "Flat 30% Off",
+        "coupon_code": "SILK30",
+        "start_date": now.isoformat(),
+        "end_date": (now + timedelta(days=10)).isoformat(),
+        "targeting_radius_km": 5.0,
+    }
+    res = client.post("/api/v1/nammadeals/admin/campaigns", json=payload, headers=headers)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["business_id"] == biz.id
+    assert data["name"] == "Silk Sarees Festive Sale"
+

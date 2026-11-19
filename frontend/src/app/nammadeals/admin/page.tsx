@@ -30,9 +30,11 @@ import {
 } from "lucide-react";
 import {
   BusinessRegistrationRecord,
+  BusinessRecord,
   CampaignRecord,
   AdvertiserPaymentRecord,
   getAdminRegistrations,
+  getAdminBusinesses,
   reviewRegistration,
   getAdminCampaigns,
   reviewCampaign,
@@ -54,6 +56,7 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<"campaigns" | "registrations" | "payments" | "analytics">("campaigns");
 
   const [registrations, setRegistrations] = useState<BusinessRegistrationRecord[]>([]);
+  const [approvedBusinesses, setApprovedBusinesses] = useState<BusinessRecord[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
   const [payments, setPayments] = useState<AdvertiserPaymentRecord[]>([]);
   const [platformAnalytics, setPlatformAnalytics] = useState<AdminPlatformAnalytics | null>(null);
@@ -108,21 +111,22 @@ export default function AdminDashboardPage() {
     try {
       setLoading(true);
       setError(null);
-      const [regs, camps, pays, stats] = await Promise.all([
+      const [regs, bizList, camps, pays, stats] = await Promise.all([
         getAdminRegistrations(adminToken).catch(() => []),
+        getAdminBusinesses(adminToken, "APPROVED").catch(() => []),
         getAdminCampaigns(adminToken).catch(() => []),
         getAdminPayments(adminToken).catch(() => []),
         getAdminPlatformAnalytics(adminToken).catch(() => null),
       ]);
       setRegistrations(regs);
+      setApprovedBusinesses(bizList);
       setCampaigns(camps);
       setPayments(pays);
       setPlatformAnalytics(stats);
 
       // Preselect first approved business in form if empty
-      const approvedRegs = regs.filter((r) => r.status === "APPROVED");
-      if (approvedRegs.length > 0 && !campaignFormData.business_id) {
-        setCampaignFormData((prev) => ({ ...prev, business_id: approvedRegs[0].id }));
+      if (bizList.length > 0 && !campaignFormData.business_id) {
+        setCampaignFormData((prev) => ({ ...prev, business_id: bizList[0].id }));
       }
     } catch (e: any) {
       setError(e.message || "Failed to load admin data");
@@ -301,8 +305,6 @@ export default function AdminDashboardPage() {
   const verifiedPaymentsTotal = payments
     .filter((p) => p.verification_status === "VERIFIED")
     .reduce((sum, p) => sum + p.amount, 0);
-
-  const approvedBusinesses = registrations.filter((r) => r.status === "APPROVED");
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8 flex-1">
@@ -908,7 +910,7 @@ export default function AdminDashboardPage() {
                     <option value="">-- Select an Approved Business --</option>
                     {approvedBusinesses.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.business_name} ({b.area})
+                        {b.name} ({b.area} • {b.category})
                       </option>
                     ))}
                   </select>

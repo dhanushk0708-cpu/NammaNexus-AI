@@ -514,6 +514,21 @@ export async function updateBusinessStatus(
   return res.json();
 }
 
+export async function getAdminBusinesses(
+  adminToken: string,
+  status?: string
+): Promise<BusinessRecord[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await fetch(`${API_BASE}/nammadeals/admin/businesses${query}`, {
+    headers: { "X-Admin-Token": adminToken },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Failed to fetch businesses" }));
+    throw new Error(err.detail || "Failed to fetch businesses");
+  }
+  return res.json();
+}
+
 export interface AdminCampaignCreateData {
   business_id: string;
   name: string;
