@@ -17,7 +17,6 @@ export default function ImageIntake({
   existingPreviewUrl,
 }: ImageIntakeProps) {
   const [activeTab, setActiveTab] = useState<"file" | "camera">("file");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(existingPreviewUrl);
   const [storageKey, setStorageKey] = useState<string | null>(existingStorageKey);
   const [isUploading, setIsUploading] = useState(false);
@@ -41,7 +40,7 @@ export default function ImageIntake({
         videoRef.current.srcObject = stream;
       }
       setIsCameraActive(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Camera access error:", err);
       setCameraError(
         "Could not access camera. Please allow camera permissions or upload a photo instead."
@@ -69,13 +68,34 @@ export default function ImageIntake({
     };
   }, [activeTab, previewUrl]);
 
+  // Clean up previewUrl on unmount
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(previewUrl);
+        } catch (e) {
+          console.warn("Error revoking intake preview URL:", e);
+        }
+      }
+    };
+  }, [previewUrl]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSelectedFile(file);
+
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(previewUrl);
+      } catch (err) {
+        console.warn("Error revoking old preview URL:", err);
+      }
+    }
+
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
-    uploadImage(file);
+    uploadImage(file, url);
   };
 
   const handleCapturePhoto = () => {
@@ -91,15 +111,23 @@ export default function ImageIntake({
     canvas.toBlob((blob) => {
       if (!blob) return;
       const file = new File([blob], `camera_capture_${Date.now()}.jpg`, { type: "image/jpeg" });
-      setSelectedFile(file);
+
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(previewUrl);
+        } catch (err) {
+          console.warn("Error revoking old preview URL:", err);
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
       stopCamera();
-      uploadImage(file);
+      uploadImage(file, url);
     }, "image/jpeg", 0.9);
   };
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File, objectUrl: string) => {
     setIsUploading(true);
     setUploadError(null);
 
@@ -115,23 +143,37 @@ export default function ImageIntake({
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Image upload failed.");
+        const errorDetail =
+          typeof data.detail === "string"
+            ? data.detail
+            : typeof data.detail === "object" && data.detail?.message
+            ? data.detail.message
+            : "Image upload failed. Please try a valid JPEG, PNG, or WebP photo.";
+        throw new Error(errorDetail);
       }
 
       setStorageKey(data.stored_filename);
-      onImageUploaded(data.stored_filename, URL.createObjectURL(file));
-    } catch (err: any) {
+      onImageUploaded(data.stored_filename, objectUrl);
+    } catch (err: unknown) {
       console.error("Upload error:", err);
-      setUploadError(err.message || "Failed to upload image. Please try again.");
+      const message =
+        err instanceof Error ? err.message : "Failed to upload image. Please try again.";
+      setUploadError(message);
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleReset = () => {
+    if (previewUrl && previewUrl.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(previewUrl);
+      } catch (err) {
+        console.warn("Error revoking preview URL:", err);
+      }
+    }
     setPreviewUrl(null);
     setStorageKey(null);
-    setSelectedFile(null);
     setUploadError(null);
     if (activeTab === "camera") {
       startCamera();
@@ -221,7 +263,7 @@ export default function ImageIntake({
           <Upload className="w-10 h-10 text-slate-400 group-hover:text-[#C8102E] transition-colors mb-3" />
           <span className="text-sm font-bold text-slate-800">Click to select photo file</span>
           <span className="text-xs text-slate-500 mt-1">Supports JPG, PNG, WEBP (Max 10MB)</span>
-          <input type="file" accept="image/*" onChange={handleFileSelect} className="hidden" />
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
         <div className="space-y-4">

@@ -178,6 +178,29 @@ export default function Home() {
             </p>
           </Link>
 
+          <Link
+            href="/nammadeals"
+            className="bg-white p-6 rounded-2xl border-2 border-amber-200/90 shadow-xs hover:border-amber-400 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-amber-700 uppercase bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                Ecosystem • Ready
+              </span>
+              <span className="text-xs text-amber-700 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                Explore <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mt-2 flex items-center gap-2">
+              NammaDeals
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold px-1.5 py-0.2 rounded-full">
+                Active
+              </span>
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+              Local Business Promotions & Rewards — location-relevant coupons, discounts, and mystery scratch-cards rewarding active citizens.
+            </p>
+          </Link>
+
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs opacity-80">
             <span className="text-[10px] font-bold text-slate-500 uppercase bg-slate-100 px-2 py-0.5 rounded">
               Pillar 4 • Modular

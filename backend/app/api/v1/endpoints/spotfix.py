@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.dependencies import get_db
 from app.models.complaint import Complaint, ComplaintStatus
+from app.schemas.ai import ValidationStatus
 from app.schemas.spotfix import (
     ComplaintDraftCreate,
     ComplaintResponse,
@@ -15,11 +16,14 @@ from app.schemas.spotfix import (
 from app.services.email import EmailDeliveryError, EmailService
 from app.services.instagram import InstagramPublishError, InstagramService
 from app.services.gemini_vision import (
+    GeminiConfigurationError,
     GeminiResponseValidationError,
     GeminiVisionService,
     GeminiVisionServiceError,
 )
 from app.services.image_validation import (
+    ImageDimensionsTooSmallError,
+    ImageQualityError,
     ImageTooLargeError,
     InvalidImageFileError,
     UnsupportedImageTypeError,
@@ -64,7 +68,11 @@ async def upload_image(image: UploadFile = File(...)):
             status_code=413,
             detail=str(exc),
         ) from exc
-    except InvalidImageFileError as exc:
+    except (
+        InvalidImageFileError,
+        ImageDimensionsTooSmallError,
+        ImageQualityError,
+    ) as exc:
         raise HTTPException(
             status_code=400,
             detail=str(exc),
@@ -115,9 +123,17 @@ async def create_complaint_draft(
     if validated_key is not None:
         try:
             image_bytes = storage_service.read_image(validated_key)
+            ext = Path(validated_key).suffix.lower()
+            mime_type = (
+                "image/png"
+                if ext == ".png"
+                else "image/webp"
+                if ext == ".webp"
+                else "image/jpeg"
+            )
             ai_result = gemini_service.analyze_image(
                 image_bytes,
-                mime_type="image/jpeg",
+                mime_type=mime_type,
             )
         except StorageKeyNotFoundError as exc:
             raise HTTPException(
@@ -134,13 +150,53 @@ async def create_complaint_draft(
                 status_code=400,
                 detail=str(exc),
             ) from exc
-        except GeminiVisionServiceError as exc:
+        except (GeminiVisionServiceError, GeminiConfigurationError) as exc:
+            logger.error("Civic image validation failed: %s", exc)
             raise HTTPException(
-                status_code=400,
-                detail=str(exc),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Civic image validation service unavailable: {str(exc)}",
             ) from exc
 
-        category = ai_result.category
+        if ai_result.validation_status in (
+            ValidationStatus.UNCLEAR,
+            ValidationStatus.REJECTED,
+        ):
+            logger.warning(
+                "SpotFix image rejected: status=%s, reason=%s",
+                ai_result.validation_status.value,
+                ai_result.rejection_reason,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": f"IMAGE_{ai_result.validation_status.value}",
+                    "message": (
+                        ai_result.rejection_reason
+                        or "Image validation failed for civic complaint."
+                    ),
+                    "validation_status": ai_result.validation_status.value,
+                    "is_civic_issue": ai_result.is_civic_issue,
+                    "category": (
+                        ai_result.category.value
+                        if hasattr(ai_result.category, "value")
+                        else ai_result.category
+                    ),
+                    "confidence": ai_result.confidence,
+                    "severity": (
+                        ai_result.severity.value
+                        if hasattr(ai_result.severity, "value")
+                        else ai_result.severity
+                    ),
+                    "visual_explanation": ai_result.visual_explanation,
+                    "rejection_reason": ai_result.rejection_reason,
+                },
+            )
+
+        category = (
+            ai_result.category.value
+            if hasattr(ai_result.category, "value")
+            else ai_result.category
+        )
 
     impact_result = calculate_predictive_impact(
         severity=ai_result.severity if ai_result else None,

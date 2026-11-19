@@ -4,18 +4,23 @@ import React, { useState } from "react";
 import {
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   Send,
   Sparkles,
-  MapPin,
   Tag,
   FileText,
   Building2,
-  AlertTriangle,
   Share2,
   Mail,
   ShieldCheck,
+  ShieldAlert,
+  Camera,
+  RotateCcw,
+  Check,
+  Lightbulb,
 } from "lucide-react";
+import SpotFixPromotions from "@/components/nammadeals/SpotFixPromotions";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -43,12 +48,21 @@ interface ComplaintResult {
   instagram_post_id: string | null;
 }
 
+interface ImageValidationFailure {
+  status: "UNCLEAR" | "REJECTED";
+  message: string;
+  visualExplanation?: string | null;
+  rejectionReason?: string | null;
+  confidence?: number | null;
+}
+
 interface SubmissionSummaryProps {
   imageStorageKey: string;
   imagePreviewUrl: string;
   latitude: number;
   longitude: number;
   onReset: () => void;
+  onChangePhoto?: () => void;
 }
 
 const CATEGORIES = [
@@ -60,12 +74,22 @@ const CATEGORIES = [
   "FALLEN_TREE",
 ];
 
+const SUPPORTED_PILLARS = [
+  { label: "Pothole", desc: "Road craters, cracks, asphalt holes" },
+  { label: "Garbage", desc: "Dumped waste, overflowing municipal bins" },
+  { label: "Water Leakage", desc: "Potable pipe bursts, municipal water leaks" },
+  { label: "Waterlogging", desc: "Flooded street sections, poor drainage" },
+  { label: "Street Light", desc: "Broken, damaged, or unlit light poles" },
+  { label: "Fallen Tree", desc: "Uprooted trees or heavy fallen branches" },
+];
+
 export default function SubmissionSummary({
   imageStorageKey,
   imagePreviewUrl,
   latitude,
   longitude,
   onReset,
+  onChangePhoto,
 }: SubmissionSummaryProps) {
   const [description, setDescription] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -73,14 +97,17 @@ export default function SubmissionSummary({
   const [isApproving, setIsApproving] = useState(false);
   const [isSubmittingOfficial, setIsSubmittingOfficial] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationFailure, setValidationFailure] = useState<ImageValidationFailure | null>(null);
   const [complaintResult, setComplaintResult] = useState<ComplaintResult | null>(null);
 
   const [editedSubject, setEditedSubject] = useState("");
   const [editedComplaintText, setEditedComplaintText] = useState("");
 
   const handleCreateDraft = async () => {
+    if (isAnalyzing) return;
     setIsAnalyzing(true);
     setError(null);
+    setValidationFailure(null);
 
     const payload = {
       image_storage_key: imageStorageKey,
@@ -102,22 +129,56 @@ export default function SubmissionSummary({
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Failed to analyze and create complaint draft.");
+        const detail = data?.detail;
+
+        // Structured validation rejection from backend AI validation
+        if (detail && typeof detail === "object" && detail.validation_status) {
+          const status = detail.validation_status === "UNCLEAR" ? "UNCLEAR" : "REJECTED";
+          setValidationFailure({
+            status,
+            message:
+              status === "UNCLEAR"
+                ? "We couldn't clearly identify the civic issue in your photo. Please upload a clearer image with good lighting and make sure the damaged area is visible."
+                : "No supported civic issue was detected in your image. SpotFix accepts potholes, garbage, water leakage, waterlogging, broken street lights, and fallen trees. Please upload a relevant photo.",
+            visualExplanation: detail.visual_explanation || null,
+            rejectionReason: detail.rejection_reason || null,
+            confidence: typeof detail.confidence === "number" ? detail.confidence : null,
+          });
+          setComplaintResult(null);
+          return;
+        }
+
+        // Generic string or upstream service failure (e.g. 503 AI service unavailable)
+        const errorMessage =
+          typeof detail === "string"
+            ? detail
+            : data?.message || "Failed to analyze complaint. Please try again.";
+        setError(errorMessage);
+        setComplaintResult(null);
+        return;
       }
 
+      // ACCEPTED: Complaint draft successfully created by backend
       setComplaintResult(data);
+      setValidationFailure(null);
+      setError(null);
       setEditedSubject(data.subject || "");
       setEditedComplaintText(data.complaint_text || "");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Draft creation error:", err);
-      setError(err.message || "Failed to analyze complaint. Please try again.");
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to connect to SpotFix AI service. Please verify your network connection.";
+      setError(message);
+      setComplaintResult(null);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
   const handleApprove = async () => {
-    if (!complaintResult) return;
+    if (!complaintResult || isApproving) return;
     setIsApproving(true);
     setError(null);
 
@@ -150,16 +211,17 @@ export default function SubmissionSummary({
       }
 
       setComplaintResult(approveData);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Approval error:", err);
-      setError(err.message || "Failed to approve complaint.");
+      const message = err instanceof Error ? err.message : "Failed to approve complaint.";
+      setError(message);
     } finally {
       setIsApproving(false);
     }
   };
 
   const handleSubmitOfficial = async () => {
-    if (!complaintResult) return;
+    if (!complaintResult || isSubmittingOfficial) return;
     setIsSubmittingOfficial(true);
     setError(null);
 
@@ -174,14 +236,195 @@ export default function SubmissionSummary({
       }
 
       setComplaintResult(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Submission error:", err);
-      setError(err.message || "Failed to submit official complaint.");
+      const message = err instanceof Error ? err.message : "Failed to submit official complaint.";
+      setError(message);
     } finally {
       setIsSubmittingOfficial(false);
     }
   };
 
+  const triggerChangePhoto = () => {
+    if (onChangePhoto) {
+      onChangePhoto();
+    } else {
+      onReset();
+    }
+  };
+
+  // -------------------------------------------------------------
+  // VIEW 1: VALIDATION FAILURE (UNCLEAR OR REJECTED)
+  // Workflow protection: never render draft, approval, or submit
+  // -------------------------------------------------------------
+  if (validationFailure) {
+    const isUnclear = validationFailure.status === "UNCLEAR";
+
+    return (
+      <div className="w-full bg-white border border-slate-200 rounded-2xl p-6 shadow-xs text-slate-900 space-y-6">
+        {/* Header Alert Card */}
+        <div
+          className={`p-5 rounded-2xl border ${
+            isUnclear
+              ? "bg-amber-50/70 border-amber-300 text-amber-950"
+              : "bg-rose-50/70 border-rose-300 text-rose-950"
+          }`}
+        >
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`p-2.5 rounded-xl shrink-0 ${
+                isUnclear ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"
+              }`}
+            >
+              {isUnclear ? (
+                <AlertTriangle className="w-6 h-6" />
+              ) : (
+                <ShieldAlert className="w-6 h-6" />
+              )}
+            </div>
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase tracking-wider border ${
+                    isUnclear
+                      ? "bg-amber-100 text-amber-900 border-amber-300"
+                      : "bg-rose-100 text-rose-900 border-rose-300"
+                  }`}
+                >
+                  AI Validation: {validationFailure.status}
+                </span>
+                {typeof validationFailure.confidence === "number" && (
+                  <span className="text-[11px] font-mono text-slate-600 bg-white/80 px-2 py-0.5 rounded border border-slate-200">
+                    Confidence: {(validationFailure.confidence * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+
+              <h3 className="text-base sm:text-lg font-bold tracking-tight">
+                {isUnclear
+                  ? "Image Visual Evidence Unclear"
+                  : "No Supported Civic Issue Detected"}
+              </h3>
+
+              <p className="text-xs sm:text-sm leading-relaxed font-medium">
+                {validationFailure.message}
+              </p>
+            </div>
+          </div>
+
+          {/* AI Explanation Details */}
+          {(validationFailure.rejectionReason || validationFailure.visualExplanation) && (
+            <div className="mt-4 pt-3.5 border-t border-slate-200/60 text-xs space-y-1">
+              <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
+                AI Visual Observation:
+              </span>
+              <p className="text-slate-600 font-mono bg-white/90 p-2.5 rounded-lg border border-slate-200 leading-relaxed">
+                {validationFailure.rejectionReason || validationFailure.visualExplanation}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Current Image & Context Preview */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider block">
+              Uploaded Photo (Failed Validation)
+            </span>
+            <div className="relative w-full h-36 rounded-lg overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center">
+              <img
+                src={imagePreviewUrl}
+                alt="Failed Validation Preview"
+                className="max-h-36 object-contain opacity-75"
+              />
+              <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 backdrop-blur-xs text-white text-[10px] font-bold rounded">
+                {validationFailure.status}
+              </div>
+            </div>
+          </div>
+
+          {/* Guidelines / Next Steps */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-between space-y-3">
+            <div>
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                {isUnclear ? "Tips for a Clearer Photo" : "SpotFix Supported Categories"}
+              </span>
+
+              {isUnclear ? (
+                <ul className="text-xs text-slate-600 space-y-1.5">
+                  <li className="flex items-start gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    <span>Take the photo in good daylight or with proper lighting.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    <span>Hold the camera steady to avoid motion blur.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                    <span>Ensure the pothole, leak, or issue occupies the center of the frame.</span>
+                  </li>
+                </ul>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  {SUPPORTED_PILLARS.map((item) => (
+                    <div
+                      key={item.label}
+                      className="p-1.5 bg-white border border-slate-200 rounded-md font-medium text-slate-700"
+                    >
+                      <span className="font-bold text-slate-900 block">{item.label}</span>
+                      <span className="text-[10px] text-slate-500 line-clamp-1">{item.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              Official civic complaint drafts are only created when visual evidence is verified.
+            </p>
+          </div>
+        </div>
+
+        {/* Action Controls: Change Photo / Retry */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={triggerChangePhoto}
+            className="w-full sm:flex-1 py-3 px-4 bg-[#C8102E] hover:bg-[#A60C24] text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+          >
+            <Camera className="w-4 h-4 text-amber-300" />
+            {isUnclear ? "Change Photo / Retake Photo" : "Upload Another Photo"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCreateDraft}
+            disabled={isAnalyzing}
+            className="w-full sm:w-auto py-3 px-5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs rounded-xl border border-slate-300 shadow-2xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isAnalyzing ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                Retrying AI Validation...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-4 h-4 text-slate-600" />
+                Retry AI Validation
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // VIEW 2: ACCEPTED & COMPLAINT CREATED
+  // Show successful verification badge, then normal review workflow
+  // -------------------------------------------------------------
   if (complaintResult) {
     const isDraft = complaintResult.status === "DRAFT";
     const isApproved = complaintResult.status === "APPROVED";
@@ -189,6 +432,34 @@ export default function SubmissionSummary({
 
     return (
       <div className="w-full bg-white border border-slate-200 rounded-2xl p-6 shadow-xs text-slate-900 space-y-6">
+        {/* Verification Success Banner */}
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-emerald-900 tracking-wider">
+                  Civic Validation: ACCEPTED
+                </span>
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-300">
+                  {complaintResult.category || "CIVIC ISSUE"}
+                </span>
+              </div>
+              <p className="text-xs text-emerald-800 mt-0.5 font-medium">
+                Gemini Vision verified visual evidence of a supported civic issue. Ready for citizen review.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right shrink-0">
+            <span className="text-[11px] font-mono font-bold text-emerald-900 block">
+              Confidence: {complaintResult.confidence ? `${(complaintResult.confidence * 100).toFixed(1)}%` : "N/A"}
+            </span>
+          </div>
+        </div>
+
         {/* Header Badge */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
@@ -241,7 +512,7 @@ export default function SubmissionSummary({
                     : "bg-emerald-100 text-emerald-900 border border-emerald-300"
                 }`}
               >
-                {complaintResult.severity || "NORMAL"}
+                {complaintResult.severity || "LOW"}
               </span>
             </div>
 
@@ -375,7 +646,7 @@ export default function SubmissionSummary({
           </div>
         )}
 
-        {/* Action Buttons & Submission Summary */}
+        {/* Action Controls */}
         {isDraft && (
           <button
             type="button"
@@ -473,6 +744,13 @@ export default function SubmissionSummary({
               </div>
             </div>
 
+            {/* NammaDeals Independent Civic Rewards */}
+            <SpotFixPromotions
+              latitude={complaintResult.latitude}
+              longitude={complaintResult.longitude}
+              area={complaintResult.authority || undefined}
+            />
+
             <button
               type="button"
               onClick={onReset}
@@ -486,7 +764,10 @@ export default function SubmissionSummary({
     );
   }
 
-  // Initial State before Draft Creation
+  // -------------------------------------------------------------
+  // VIEW 3: INITIAL PRE-ANALYSIS STATE
+  // Review intake image and coordinates before triggering Gemini validation
+  // -------------------------------------------------------------
   return (
     <div className="w-full bg-white border border-slate-200 rounded-2xl p-6 shadow-xs text-slate-900 space-y-6">
       <div className="border-b border-slate-100 pb-4">
@@ -501,9 +782,18 @@ export default function SubmissionSummary({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-            Intake Image
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              Intake Image
+            </span>
+            <button
+              type="button"
+              onClick={triggerChangePhoto}
+              className="text-[11px] text-[#C8102E] hover:underline font-semibold"
+            >
+              Change Photo
+            </button>
+          </div>
           <div className="relative w-full h-36 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
             <img src={imagePreviewUrl} alt="Intake preview" className="max-h-36 object-contain" />
           </div>
@@ -538,7 +828,8 @@ export default function SubmissionSummary({
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-[#C8102E]"
+            disabled={isAnalyzing}
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-[#C8102E] disabled:bg-slate-100"
           >
             <option value="">-- Let Gemini Vision AI Auto-Detect --</option>
             {CATEGORIES.map((cat) => (
@@ -557,20 +848,32 @@ export default function SubmissionSummary({
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={isAnalyzing}
             rows={3}
             placeholder="Add any extra context, nearby landmarks, or specific notes..."
-            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-[#C8102E] placeholder:text-slate-400 resize-none"
+            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-[#C8102E] placeholder:text-slate-400 resize-none disabled:bg-slate-100"
           />
         </div>
       </div>
 
+      {/* General Service Error Alert */}
       {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-          <p>{error}</p>
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <p className="font-medium">{error}</p>
+          </div>
+          <button
+            type="button"
+            onClick={triggerChangePhoto}
+            className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-[11px] font-semibold rounded shrink-0"
+          >
+            Change Photo
+          </button>
         </div>
       )}
 
+      {/* Primary Trigger Button */}
       <button
         type="button"
         onClick={handleCreateDraft}
@@ -580,7 +883,7 @@ export default function SubmissionSummary({
         {isAnalyzing ? (
           <>
             <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
-            Analyzing Image & Creating Draft...
+            Analyzing Image & Validating Civic Evidence...
           </>
         ) : (
           <>

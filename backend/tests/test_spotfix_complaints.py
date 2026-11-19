@@ -4,14 +4,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import spotfix as spotfix_endpoint
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.complaint import Complaint
 from app.schemas.ai import (
     ComplaintWriterResult,
     PredictiveImpactResult,
     RoutingResult,
     SpotFixImageAnalysisResult,
+    ValidationStatus,
 )
-from app.services.gemini_vision import GeminiResponseValidationError
+from app.services.gemini_vision import (
+    GeminiResponseValidationError,
+    GeminiVisionServiceError,
+)
 from app.services.storage.local import (
     LocalStorageService,
     StorageKeyNotFoundError,
@@ -310,3 +316,215 @@ def test_create_complaint_draft_validation_error():
     )
 
     assert response.status_code == 422
+
+
+def test_create_complaint_draft_rejected_normal_road_no_db_record(monkeypatch):
+    analysis = SpotFixImageAnalysisResult(
+        validation_status=ValidationStatus.REJECTED,
+        is_civic_issue=False,
+        category=None,
+        confidence=0.96,
+        severity=None,
+        visual_explanation="Clear asphalt roadway with no civic defects.",
+        rejection_reason="No civic issue detected. Road in good condition.",
+    )
+
+    monkeypatch.setattr(
+        spotfix_endpoint.GeminiVisionService,
+        "analyze_image",
+        lambda self, image_bytes, mime_type=None: analysis,
+    )
+
+    image_key = "normal-road-test.png"
+    storage_service.base_path.mkdir(parents=True, exist_ok=True)
+    (storage_service.base_path / image_key).write_bytes(b"normal-road-bytes")
+
+    db = SessionLocal()
+    count_before = db.query(Complaint).count()
+    db.close()
+
+    response = client.post(
+        "/api/v1/spotfix/complaints",
+        json={
+            "description": "Submitting a road photo.",
+            "image_storage_key": image_key,
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error"] == "IMAGE_REJECTED"
+    assert detail["validation_status"] == "REJECTED"
+    assert detail["is_civic_issue"] is False
+    assert detail["category"] is None
+    assert detail["severity"] is None
+    assert "No civic issue detected" in detail["rejection_reason"]
+
+    db = SessionLocal()
+    count_after = db.query(Complaint).count()
+    db.close()
+    assert count_after == count_before
+
+
+def test_create_complaint_draft_rejected_unsupported_category_no_db_record(monkeypatch):
+    analysis = SpotFixImageAnalysisResult(
+        validation_status=ValidationStatus.REJECTED,
+        is_civic_issue=False,
+        category=None,
+        confidence=0.91,
+        severity=None,
+        visual_explanation="Car illegally parked on public walkway.",
+        rejection_reason="Unsupported issue: illegal parking is not covered by SpotFix.",
+    )
+
+    monkeypatch.setattr(
+        spotfix_endpoint.GeminiVisionService,
+        "analyze_image",
+        lambda self, image_bytes, mime_type=None: analysis,
+    )
+
+    image_key = "unsupported-issue-test.png"
+    storage_service.base_path.mkdir(parents=True, exist_ok=True)
+    (storage_service.base_path / image_key).write_bytes(b"unsupported-issue-bytes")
+
+    db = SessionLocal()
+    count_before = db.query(Complaint).count()
+    db.close()
+
+    response = client.post(
+        "/api/v1/spotfix/complaints",
+        json={
+            "description": "Illegal parking complaint.",
+            "image_storage_key": image_key,
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error"] == "IMAGE_REJECTED"
+    assert detail["validation_status"] == "REJECTED"
+    assert detail["is_civic_issue"] is False
+    assert "illegal parking" in detail["rejection_reason"]
+
+    db = SessionLocal()
+    count_after = db.query(Complaint).count()
+    db.close()
+    assert count_after == count_before
+
+
+def test_create_complaint_draft_unclear_image_no_db_record(monkeypatch):
+    analysis = SpotFixImageAnalysisResult(
+        validation_status=ValidationStatus.UNCLEAR,
+        is_civic_issue=False,
+        category=None,
+        confidence=0.20,
+        severity=None,
+        visual_explanation="Extreme blur makes road condition indiscernible.",
+        rejection_reason="Image quality is insufficient to verify a civic issue.",
+    )
+
+    monkeypatch.setattr(
+        spotfix_endpoint.GeminiVisionService,
+        "analyze_image",
+        lambda self, image_bytes, mime_type=None: analysis,
+    )
+
+    image_key = "unclear-blur-test.png"
+    storage_service.base_path.mkdir(parents=True, exist_ok=True)
+    (storage_service.base_path / image_key).write_bytes(b"blurry-bytes")
+
+    db = SessionLocal()
+    count_before = db.query(Complaint).count()
+    db.close()
+
+    response = client.post(
+        "/api/v1/spotfix/complaints",
+        json={
+            "description": "Blurry pothole photo.",
+            "image_storage_key": image_key,
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["error"] == "IMAGE_UNCLEAR"
+    assert detail["validation_status"] == "UNCLEAR"
+    assert detail["is_civic_issue"] is False
+    assert "Image quality is insufficient" in detail["rejection_reason"]
+
+    db = SessionLocal()
+    count_after = db.query(Complaint).count()
+    db.close()
+    assert count_after == count_before
+
+
+def test_create_complaint_draft_gemini_api_failure_fails_safely_no_db_record(monkeypatch):
+    def fake_analyze(self, image_bytes, *, mime_type=None):
+        raise GeminiVisionServiceError("Gemini API call timed out.")
+
+    monkeypatch.setattr(
+        spotfix_endpoint.GeminiVisionService,
+        "analyze_image",
+        fake_analyze,
+    )
+
+    image_key = "gemini-failure-test.png"
+    storage_service.base_path.mkdir(parents=True, exist_ok=True)
+    (storage_service.base_path / image_key).write_bytes(b"image-bytes")
+
+    db = SessionLocal()
+    count_before = db.query(Complaint).count()
+    db.close()
+
+    response = client.post(
+        "/api/v1/spotfix/complaints",
+        json={
+            "description": "Attempt complaint while Gemini is down.",
+            "image_storage_key": image_key,
+        },
+    )
+
+    assert response.status_code == 503
+    assert "unavailable" in response.json()["detail"].lower()
+
+    db = SessionLocal()
+    count_after = db.query(Complaint).count()
+    db.close()
+    assert count_after == count_before
+
+
+def test_create_complaint_draft_genuine_low_severity_issue_succeeds(monkeypatch):
+    analysis = SpotFixImageAnalysisResult(
+        validation_status=ValidationStatus.ACCEPTED,
+        is_civic_issue=True,
+        category="POTHOLE",
+        confidence=0.35,
+        severity="LOW",
+        visual_explanation="Small shallow road surface wearing on side of road.",
+    )
+
+    monkeypatch.setattr(
+        spotfix_endpoint.GeminiVisionService,
+        "analyze_image",
+        lambda self, image_bytes, mime_type=None: analysis,
+    )
+
+    image_key = "low-severity-test.png"
+    storage_service.base_path.mkdir(parents=True, exist_ok=True)
+    (storage_service.base_path / image_key).write_bytes(b"low-severity-bytes")
+
+    response = client.post(
+        "/api/v1/spotfix/complaints",
+        json={
+            "description": "Minor surface wear.",
+            "image_storage_key": image_key,
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "DRAFT"
+    assert data["category"] == "POTHOLE"
+    assert data["severity"] == "LOW"
+    assert data["confidence"] == 0.35
+    assert data["id"] is not None
